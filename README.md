@@ -300,3 +300,9 @@ Prettier formats `.html` files, and it does not know the `@` tags. Add this line
 ```
 *.dox.html
 ```
+
+## Credits
+
+The syntax and the ideas of this package come from [Edge.js](https://edgejs.dev), the template engine of [AdonisJS](https://adonisjs.com), made by Harminder Virk and the AdonisJS team. Thank you!
+
+`dox_view` is a new engine written in Dart. It does not use Edge.js code.
