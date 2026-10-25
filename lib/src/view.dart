@@ -27,7 +27,7 @@ DoxResponse view(
   return response(html).contentType(ContentType.html);
 }
 
-/// The template engine of the app. `ViewService` sets it up.
+/// The template engine of the app. `ViewProvider` sets it up.
 class View {
   static ViewEngine? _engine;
 

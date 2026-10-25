@@ -8,4 +8,4 @@ export 'src/view.dart';
 export 'src/view_config.dart';
 export 'src/view_engine.dart';
 export 'src/view_exception.dart';
-export 'src/view_service.dart';
+export 'src/view_provider.dart';

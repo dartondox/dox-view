@@ -19,8 +19,8 @@ Add the service in `lib/`, so every isolate sets up the engine:
 ```dart
 import 'package:dox_view/dox_view.dart';
 
-class AppViewService extends ViewService {
-  AppViewService() : super(const ViewConfig());
+class AppViewProvider extends ViewProvider {
+  AppViewProvider() : super(const ViewConfig());
 }
 ```
 
