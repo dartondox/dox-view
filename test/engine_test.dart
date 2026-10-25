@@ -297,6 +297,23 @@ void main() {
       );
     });
 
+    test('shared data reaches components, page data does not', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{
+          'page': "@component('layout')@end",
+          'layout': '{{ user }}|{{ secret }}',
+        }),
+      );
+      expect(
+        engine.render(
+          'page',
+          <String, Object?>{'secret': 'x'},
+          <String, Object?>{'user': 'Ann'},
+        ),
+        'Ann|',
+      );
+    });
+
     test('a component does not see the variables of the caller', () {
       expect(
         render("@!component('components/form/input')", <String, Object?>{

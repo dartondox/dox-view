@@ -1,3 +1,9 @@
+## 3.0.0-alpha.2
+
+- Components and layouts now see the request helpers of `view()`: `request`, `csrfField()`, `csrfToken()`, `errors`, `old()` and `session()`. Before, a form inside a layout failed with `can not read "path" of null`.
+- `ViewEngine.render` takes a third map, `shared`: data that components see too.
+- README: credits to Edge.js.
+
 ## 3.0.0-alpha.1
 
 - First version.

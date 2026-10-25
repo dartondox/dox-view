@@ -38,10 +38,16 @@ void main() {
       '<h1>{{ name }}</h1>'
       "<a href=\"{{ route('users.show', { id: 7 }) }}\">{{ request.path }}</a>",
     );
+    // the form is in a layout component: it sees the request helpers
     await File('${dir.path}/form.dox.html').writeAsString(
-      '<form method="POST">{{ csrfField() }}'
+      "@component('form_layout')"
       '<input name="email" value="{{ old(\'email\') }}">'
-      "{{ errors.email ?? '' }}</form>",
+      "{{ errors.email ?? '' }}"
+      '@end',
+    );
+    await File('${dir.path}/form_layout.dox.html').writeAsString(
+      '<form method="POST" action="{{ request.path }}">{{ csrfField() }}'
+      '{{ \$slots.main }}</form>',
     );
     View.configure(ViewConfig(path: dir.path, cache: false));
     client = await DoxTestClient.start(
@@ -83,6 +89,7 @@ void main() {
         .get('/form');
     expect(back.body, contains('value="a@b.c"'));
     expect(back.body, contains('The email is taken'));
+    expect(back.body, contains('action="/form"'));
   });
 
   test('View.render gives a string, eg. for mail', () {

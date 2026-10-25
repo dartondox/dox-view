@@ -36,15 +36,21 @@ class ViewEngine {
     globals.define(name, value);
   }
 
-  /// the HTML of the template [name] with [data]
+  /// the HTML of the template [name] with [data]. Components do not see
+  /// [data], but they see [shared], eg. the request helpers.
   String render(
     String name, [
     Map<String, Object?> data = const <String, Object?>{},
+    Map<String, Object?> shared = const <String, Object?>{},
   ]) {
     StringBuffer out = StringBuffer();
-    RenderContext(
-      this,
-    ).renderTemplate(name, Scope(<String, Object?>{...data}, globals), out, 0);
+    Scope sharedScope = shared.isEmpty ? globals : Scope(shared, globals);
+    RenderContext(this, sharedScope).renderTemplate(
+      name,
+      Scope(<String, Object?>{...data}, sharedScope),
+      out,
+      0,
+    );
     return out.toString();
   }
 

@@ -14,9 +14,12 @@ class Template {
 
 /// The state of one render.
 class RenderContext {
-  RenderContext(this.engine);
+  RenderContext(this.engine, this.shared);
 
   final ViewEngine engine;
+
+  /// the globals and the shared data of this render. Components see it.
+  final Scope shared;
 
   /// the template that renders now, for error messages
   String template = '';
@@ -210,7 +213,7 @@ class IncludeNode extends Node {
 }
 
 /// `@component('name', props) ... @end`. The component sees only its
-/// props, `$props`, `$slots` and the globals.
+/// props, `$props`, `$slots`, the shared data and the globals.
 class ComponentNode extends Node {
   const ComponentNode(this.name, this.props, this.main, this.slots, super.line);
 
@@ -253,7 +256,7 @@ class ComponentNode extends Node {
         '${prop.key}': prop.value,
       r'$props': props,
       r'$slots': rendered,
-    }, ctx.engine.globals);
+    }, ctx.shared);
     ctx.renderTemplate(template, inner, out, line);
   }
 

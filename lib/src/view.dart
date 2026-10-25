@@ -9,9 +9,10 @@ import 'view_engine.dart';
 
 /// Render the template [name] (eg. `users/index`) as an HTML response.
 ///
-/// With a session, the template can also use `errors`, `old('field')`,
+/// With a session, the templates can also use `errors`, `old('field')`,
 /// `session('key')`, `csrfToken()` and `csrfField()`. Every template can
-/// use `request.path`, `request.method` and `request.query`.
+/// use `request.path`, `request.method` and `request.query`. Components
+/// and layouts see these too.
 /// ```
 /// DoxResponse index(DoxRequest req) {
 ///   return view(req, 'users/index', <String, dynamic>{'users': users});
@@ -22,10 +23,7 @@ DoxResponse view(
   String name, [
   Map<String, dynamic> data = const <String, dynamic>{},
 ]) {
-  String html = View.render(name, <String, Object?>{
-    ...View.requestData(req),
-    ...data,
-  });
+  String html = View.engine.render(name, data, View.requestData(req));
   return response(html).contentType(ContentType.html);
 }
 

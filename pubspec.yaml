@@ -1,6 +1,6 @@
 name: dox_view
 description: "A template engine for the Dox framework, like Edge.js: layouts with components and slots, @if, @each and escaped output in .dox.html files."
-version: 3.0.0-alpha.1
+version: 3.0.0-alpha.2
 repository: https://github.com/dartondox/dox-view
 homepage: https://dartondox.dev
 
