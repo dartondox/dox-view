@@ -1,3 +1,7 @@
+## 3.0.0
+
+- The first stable release.
+
 ## 3.0.0-rc.1
 
 - Fix: `View.configure()` dropped the globals added before it with `View.global()`. Now it keeps them. The globals of the config win on the same name.
