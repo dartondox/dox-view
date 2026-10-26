@@ -102,6 +102,21 @@ void main() {
     );
   });
 
+  test('configure keeps globals that were added before', () {
+    View.global('year', 2026);
+    View.global('appName', 'old');
+    View.configure(
+      ViewConfig(
+        path: dir.path,
+        cache: false,
+        globals: <String, Object?>{'appName': 'new'},
+      ),
+    );
+    expect(View.engine.globals.lookup('year'), 2026);
+    expect(View.engine.globals.lookup('appName'), 'new');
+    expect(View.engine.globals.lookup('route'), isNotNull);
+  });
+
   test('a template name can not leave the views folder', () {
     expect(() => View.render('../secret'), throwsA(isA<ViewException>()));
   });

@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fix: `View.configure()` dropped the globals added before it with `View.global()`. Now it keeps them. The globals of the config win on the same name.
+
 ## 3.0.0-alpha.3
 
 - `ViewProvider` (was a DoxService): extend it in your app, `shutdown()` is optional.

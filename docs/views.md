@@ -254,6 +254,8 @@ View.global('year', DateTime.now().year);
 View.global('money', (num cents) => (cents / 100).toStringAsFixed(2));
 ```
 
+You can add globals before or after `View.configure()`. The engine keeps them. When a name is in both, the value in `ViewConfig.globals` wins.
+
 ```html
 <footer>{{ appName }} {{ year }}</footer>
 <a href="{{ route('users.show', { id: user.id }) }}">Profile</a>
