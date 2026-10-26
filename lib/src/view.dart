@@ -34,9 +34,12 @@ class View {
   /// the engine, with the default [ViewConfig] when it is not set up
   static ViewEngine get engine => _engine ??= _make(const ViewConfig());
 
-  /// set up the engine with [config]
+  /// set up the engine with [config]. Globals added before with
+  /// [global] are kept. The globals of [config] win on the same name.
   static void configure(ViewConfig config) {
-    _engine = _make(config);
+    Map<String, Object?> before =
+        _engine?.globals.vars ?? const <String, Object?>{};
+    _engine = _make(config, before);
   }
 
   /// add a variable or function that every template can use
@@ -77,7 +80,10 @@ class View {
     };
   }
 
-  static ViewEngine _make(ViewConfig config) {
+  static ViewEngine _make(
+    ViewConfig config, [
+    Map<String, Object?> before = const <String, Object?>{},
+  ]) {
     bool cache =
         config.cache ??
         !<String>[
@@ -87,7 +93,7 @@ class View {
     return ViewEngine(
       FileTemplateLoader(config.path, extension: config.extension),
       cache: cache,
-      globals: <String, Object?>{'route': _route, ...config.globals},
+      globals: <String, Object?>{'route': _route, ...before, ...config.globals},
     );
   }
 }
