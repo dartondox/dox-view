@@ -13,6 +13,17 @@ class User {
   };
 }
 
+/// an object that can change, and counts its toJson() calls
+class Counter {
+  int value = 0;
+  int calls = 0;
+
+  Map<String, dynamic> toJson() {
+    calls++;
+    return <String, dynamic>{'value': value};
+  }
+}
+
 /// render the template [source] with [data]. [others] are more
 /// templates it can include.
 String render(
@@ -203,6 +214,28 @@ void main() {
         }),
         'Ann Bob ',
       );
+    });
+
+    test('a change to an object between renders shows', () {
+      ViewEngine engine = ViewEngine(
+        MemoryTemplateLoader(<String, String>{'main': '{{ counter.value }}'}),
+      );
+      Counter counter = Counter();
+      engine.global('counter', counter);
+      expect(engine.render('main'), '0');
+      counter.value = 5;
+      expect(engine.render('main'), '5');
+    });
+
+    test('toJson() runs once per object in one render', () {
+      Counter counter = Counter();
+      expect(
+        render('{{ c.value }}{{ c.value }}{{ c.value }}', <String, Object?>{
+          'c': counter,
+        }),
+        '000',
+      );
+      expect(counter.calls, 1);
     });
   });
 
