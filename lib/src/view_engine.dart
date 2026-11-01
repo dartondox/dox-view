@@ -1,3 +1,4 @@
+import 'expression.dart' show jsonCache;
 import 'nodes.dart';
 import 'scope.dart';
 import 'template_loader.dart';
@@ -45,12 +46,20 @@ class ViewEngine {
   ]) {
     StringBuffer out = StringBuffer();
     Scope sharedScope = shared.isEmpty ? globals : Scope(shared, globals);
-    RenderContext(this, sharedScope).renderTemplate(
-      name,
-      Scope(<String, Object?>{...data}, sharedScope),
-      out,
-      0,
-    );
+    // a new toJson() cache for this render; keep the outer one for a
+    // render inside a render
+    Expando<Map<Object?, Object?>>? outer = jsonCache;
+    jsonCache = Expando<Map<Object?, Object?>>();
+    try {
+      RenderContext(this, sharedScope).renderTemplate(
+        name,
+        Scope(<String, Object?>{...data}, sharedScope),
+        out,
+        0,
+      );
+    } finally {
+      jsonCache = outer;
+    }
     return out.toString();
   }
 

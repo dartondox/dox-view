@@ -1,3 +1,7 @@
+## Unreleased
+
+- Fix: the `toJson()` of an object was kept for the life of the object. A change to the object (for example a global) did not show in later renders. Now the cache lasts only one render.
+
 ## 3.0.0
 
 - The first stable release.

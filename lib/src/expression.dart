@@ -215,8 +215,10 @@ String stringify(Object? value) => switch (value) {
   _ => value.toString(),
 };
 
-/// `toJson()` of objects, made once per object
-final Expando<Map<Object?, Object?>> _json = Expando<Map<Object?, Object?>>();
+/// `toJson()` of objects, made once per object in one render.
+/// `ViewEngine.render` sets a new one for each render, so a change to an
+/// object between two renders shows. Null outside a render: no cache.
+Expando<Map<Object?, Object?>>? jsonCache;
 
 /// [target] as a map: a map, or an object with `toJson()`
 Map<Object?, Object?>? _asMap(Object? target) {
@@ -229,7 +231,8 @@ Map<Object?, Object?>? _asMap(Object? target) {
       target is Record) {
     return null;
   }
-  Map<Object?, Object?>? cached = _json[target];
+  Expando<Map<Object?, Object?>>? cache = jsonCache;
+  Map<Object?, Object?>? cached = cache?[target];
   if (cached != null) return cached;
   Object? json;
   try {
@@ -238,7 +241,8 @@ Map<Object?, Object?>? _asMap(Object? target) {
     return null;
   }
   if (json is! Map<Object?, Object?>) return null;
-  return _json[target] = json;
+  cache?[target] = json;
+  return json;
 }
 
 /// `target.name`
