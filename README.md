@@ -238,6 +238,8 @@ With `SessionMiddleware`, `view()` adds these to every template:
 | `old('email')` | the input of the request before |
 | `session('key')` | a value from the session |
 
+`errors` is always there. With no session, and in `View.render`, it is an empty map, so `{{ errors.email }}` prints nothing.
+
 ```html
 <form method="POST" action="/register">
   {{ csrfField() }}

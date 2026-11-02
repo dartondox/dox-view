@@ -9,9 +9,10 @@ import 'view_engine.dart';
 
 /// Render the template [name] (eg. `users/index`) as an HTML response.
 ///
-/// With a session, the templates can also use `errors`, `old('field')`,
+/// With a session, the templates can also use `old('field')`,
 /// `session('key')`, `csrfToken()` and `csrfField()`. Every template can
-/// use `request.path`, `request.method` and `request.query`. Components
+/// use `errors` (empty with no session), `request.path`, `request.method`
+/// and `request.query`. Components
 /// and layouts see these too.
 /// ```
 /// DoxResponse index(DoxRequest req) {
@@ -56,8 +57,14 @@ class View {
     String name, [
     Map<String, dynamic> data = const <String, dynamic>{},
   ]) {
-    return engine.render(name, data);
+    return engine.render(name, data, _noErrors);
   }
+
+  /// `errors` is always there, so `{{ errors.email }}` prints nothing
+  /// when there are no errors
+  static const Map<String, Object?> _noErrors = <String, Object?>{
+    'errors': <String, Object?>{},
+  };
 
   /// the variables `view()` adds for the request [req]
   static Map<String, Object?> requestData(DoxRequest req) {
@@ -67,8 +74,8 @@ class View {
         'method': req.method,
         'query': req.uri.queryParameters,
       },
+      'errors': req.hasSession ? req.session.errors : const <String, Object?>{},
       if (req.hasSession) ...<String, Object?>{
-        'errors': req.session.errors,
         'old': req.session.old,
         'session': req.session.get,
         'csrfToken': () => req.session.token,

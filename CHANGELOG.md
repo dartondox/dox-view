@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Fix: `{{ errors.email }}` threw an error when there was no session, and in `View.render`. Now `errors` is always there: an empty map when there is no session, so the template prints nothing.
 - Fix: the `toJson()` of an object was kept for the life of the object. A change to the object (for example a global) did not show in later renders. Now the cache lasts only one render.
 
 ## 3.0.0

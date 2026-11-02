@@ -27,6 +27,13 @@ class ViewRouter extends Router {
   }
 }
 
+class PlainRouter extends Router {
+  @override
+  void register() {
+    Route.get('/plain', (DoxRequest req) => view(req, 'errors'));
+  }
+}
+
 void main() {
   late DoxTestClient client;
   late Directory dir;
@@ -49,11 +56,13 @@ void main() {
       '<form method="POST" action="{{ request.path }}">{{ csrfField() }}'
       '{{ \$slots.main }}</form>',
     );
+    await File('${dir.path}/errors.dox.html')
+        .writeAsString('[{{ errors.email }}]');
     View.configure(ViewConfig(path: dir.path, cache: false));
     client = await DoxTestClient.start(
       AppConfig(
         appKey: '4HyiSrq4N5Nfg6bOadIhbFEI8zbUkpxt',
-        routers: <Router>[ViewRouter()],
+        routers: <Router>[ViewRouter(), PlainRouter()],
       ),
     );
   });
@@ -90,6 +99,13 @@ void main() {
     expect(back.body, contains('value="a@b.c"'));
     expect(back.body, contains('The email is taken'));
     expect(back.body, contains('action="/form"'));
+  });
+
+  test('errors is empty with no session and in View.render', () async {
+    TestResponse res = await client.get('/plain');
+    expect(res.status, 200);
+    expect(res.body, '[]');
+    expect(View.render('errors'), '[]');
   });
 
   test('View.render gives a string, eg. for mail', () {
