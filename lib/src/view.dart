@@ -57,14 +57,18 @@ class View {
     String name, [
     Map<String, dynamic> data = const <String, dynamic>{},
   ]) {
-    return engine.render(name, data, _noErrors);
+    return engine.render(name, data, _errors(const <String, Object?>{}));
   }
 
   /// `errors` is always there, so `{{ errors.email }}` prints nothing
-  /// when there are no errors
-  static const Map<String, Object?> _noErrors = <String, Object?>{
-    'errors': <String, Object?>{},
-  };
+  /// when there are no errors. An app global `errors` wins when there
+  /// are no validation errors.
+  static Map<String, Object?> _errors(Map<Object?, Object?> errors) {
+    if (errors.isEmpty && engine.globals.vars.containsKey('errors')) {
+      return const <String, Object?>{};
+    }
+    return <String, Object?>{'errors': errors};
+  }
 
   /// the variables `view()` adds for the request [req]
   static Map<String, Object?> requestData(DoxRequest req) {
@@ -74,7 +78,11 @@ class View {
         'method': req.method,
         'query': req.uri.queryParameters,
       },
-      'errors': req.hasSession ? req.session.errors : const <String, Object?>{},
+      ..._errors(
+        req.hasSession ? req.session.errors : const <String, Object?>{},
+      ),
+      // for `@auth` and `@guest`
+      r'$auth': req.auth?.isLoggedIn() ?? false,
       if (req.hasSession) ...<String, Object?>{
         'old': req.session.old,
         'session': req.session.get,
@@ -100,6 +108,7 @@ class View {
     return ViewEngine(
       FileTemplateLoader(config.path, extension: config.extension),
       cache: cache,
+      environment: Env.get<String>('APP_ENV'),
       globals: <String, Object?>{'route': _route, ...before, ...config.globals},
     );
   }

@@ -1,5 +1,12 @@
 ## Unreleased
 
+- New tags: `@isset`, `@empty`, `@auth`, `@guest`, `@env`, `@production`, `@once`, `@verbatim`, `@class`, `@checked`, `@selected` and `@disabled`. A component with the same name still wins. With no `( )`, `@isset`, `@empty`, `@env`, `@class`, `@checked`, `@selected` and `@disabled` stay plain text.
+- `ViewEngine` takes `environment` for `@env` and `@production`. By default it is `APP_ENV`.
+- Components get `$attributes`: the props as HTML attributes, with `merge()` for default attributes. The values are escaped.
+- Components get `$slot`, the same as `$slots.main`. Before, `$slots.main` was missing when the component had no body. Now both are always there, as empty text. So `{{ $slots.main ?? 'x' }}` no longer prints `x` for an empty body.
+- An empty `SafeString` is now false in `@if`, like empty text. An empty named slot is false too.
+- Fix: an app global named `errors` was hidden by the empty `errors` that every view gets. Now the global shows when there are no validation errors.
+
 - Fix: `{{ errors.email }}` threw an error when there was no session, and in `View.render`. Now `errors` is always there: an empty map when there is no session, so the template prints nothing.
 - Fix: the `toJson()` of an object was kept for the life of the object. A change to the object (for example a global) did not show in later renders. Now the cache lasts only one render.
 

@@ -357,6 +357,151 @@ void main() {
     });
   });
 
+  group('Blade tags', () {
+    test('@isset and @empty, with @else', () {
+      String template =
+          '@isset(user.name)set @else not @end '
+          '@empty(items)empty @else full @end';
+      expect(
+        render(template, <String, Object?>{
+          'user': <String, Object?>{'name': 'Ann'},
+          'items': <int>[1],
+        }),
+        'set   full ',
+      );
+      // a field of null is not an error here
+      expect(render(template), ' not  empty ');
+    });
+
+    test('with no ( ), @empty and @class stay text', () {
+      expect(render('a @empty b @class c'), 'a @empty b @class c');
+    });
+
+    test('@auth and @guest read \$auth', () {
+      String template = '@auth in @else out @end @guest guest @end';
+      expect(render(template, <String, Object?>{r'$auth': true}), ' in  ');
+      expect(render(template), ' out   guest ');
+      expect(
+        () => render("@auth('admin') x @end"),
+        throwsA(isA<ViewException>()),
+      );
+    });
+
+    test('@env and @production', () {
+      String renderIn(String environment, String source) => ViewEngine(
+        MemoryTemplateLoader(<String, String>{'main': source}),
+        environment: environment,
+      ).render('main');
+
+      String template =
+          "@env('local')L @end @env(['staging', 'production'])S @end "
+          '@production P @else N @end';
+      expect(renderIn('local', template), 'L    N ');
+      expect(renderIn('production', template), ' S   P ');
+    });
+
+    test('@class escapes the names', () {
+      expect(
+        render(
+          "<a @class(['btn', { active: on, off: !on }, bad])>",
+          <String, Object?>{'on': true, 'bad': '"><script>'},
+        ),
+        '<a class="btn active &quot;&gt;&lt;script&gt;">',
+      );
+    });
+
+    test('@checked, @selected and @disabled', () {
+      expect(
+        render(
+          '<input @checked(a)><option @selected(b)><button @disabled(a)>',
+          <String, Object?>{'a': true, 'b': false},
+        ),
+        '<input checked><option ><button disabled>',
+      );
+    });
+
+    test('@verbatim does not run anything inside', () {
+      expect(
+        render(
+          '@verbatim\n{{ name }} @if(x) {{{ x }}} {{ \n@end\n{{ name }}',
+          <String, Object?>{'name': 'Ann'},
+        ),
+        '{{ name }} @if(x) {{{ x }}} {{ \nAnn',
+      );
+      expect(() => render('@verbatim {{ x }}'), throwsA(isA<ViewException>()));
+    });
+
+    test('@once shows once in one render, in each render', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{
+          'main': '@!box() @!box() @!box()',
+          'components/box': '[@once<script>@end]',
+        }),
+        cache: false,
+      );
+      expect(engine.render('main'), '[<script>] [] []');
+      expect(engine.render('main'), '[<script>] [] []');
+    });
+
+    test('a component with the same name wins', () {
+      expect(
+        render('@!class({ a: 1 })', <String, Object?>{}, <String, String>{
+          'components/class': 'component {{ a }}',
+        }),
+        'component 1',
+      );
+    });
+  });
+
+  group('component attributes and slots', () {
+    Map<String, String> templates = <String, String>{
+      'components/button':
+          "<button {{ \$attributes.merge({ class: 'btn', type: 'button' }) }}>"
+          '{{ \$slot }}|{{ \$slots.main }}</button>',
+      'components/attrs': '<i {{ \$attributes }}>{{ \$attributes.id }}</i>',
+      'components/check': '@if(\$slots.main)full @else empty @end',
+    };
+
+    test('merge joins class, a prop wins, and values are escaped', () {
+      expect(
+        render(
+          "@!button({ class: 'big', type: 'submit', title: t })",
+          <String, Object?>{'t': '"x"'},
+          templates,
+        ),
+        '<button class="btn big" type="submit" title="&quot;x&quot;">'
+        '|</button>',
+      );
+    });
+
+    test('\$attributes prints text, numbers and true only', () {
+      expect(
+        render(
+          "@!attrs({ id: 'a', n: 2, hidden: true, off: false, list: [1], "
+          "'bad\"name': 1 })",
+          <String, Object?>{},
+          templates,
+        ),
+        '<i id="a" n="2" hidden>a</i>',
+      );
+    });
+
+    test('\$slot and \$slots.main are empty text when the slot is empty', () {
+      expect(
+        render('@!button()', <String, Object?>{}, templates),
+        '<button class="btn" type="button">|</button>',
+      );
+      expect(
+        render('@check() @end', <String, Object?>{}, templates),
+        ' empty ',
+      );
+      expect(
+        render('@check() x @end', <String, Object?>{}, templates),
+        'full ',
+      );
+    });
+  });
+
   group('globals', () {
     test('every template can use them', () {
       ViewEngine engine = ViewEngine(

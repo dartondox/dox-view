@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'expression.dart' show jsonCache;
 import 'nodes.dart';
 import 'scope.dart';
@@ -18,7 +20,9 @@ class ViewEngine {
     this.loader, {
     this.cache = true,
     Map<String, Object?> globals = const <String, Object?>{},
-  }) : globals = Scope(<String, Object?>{...globals});
+    String? environment,
+  }) : globals = Scope(<String, Object?>{...globals}),
+       environment = environment ?? Platform.environment['APP_ENV'] ?? '';
 
   final TemplateLoader loader;
 
@@ -28,6 +32,10 @@ class ViewEngine {
 
   /// the variables and functions every template can use
   final Scope globals;
+
+  /// the app environment for `@env` and `@production`. By default it is
+  /// `APP_ENV`.
+  final String environment;
 
   final Map<String, Template> _templates = <String, Template>{};
   final Map<String, bool> _exists = <String, bool>{};

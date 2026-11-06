@@ -152,6 +152,27 @@ class Lexer {
     );
     _advance(end);
     _tagEnd = end;
+    if (name == 'verbatim' && args == null && !selfClosing) _verbatim();
+  }
+
+  /// the body of `@verbatim` is plain text up to the next `@end`:
+  /// no `{{ }}` and no tags in it
+  void _verbatim() {
+    for (
+      int at = source.indexOf('@end', _pos);
+      at != -1;
+      at = source.indexOf('@end', at + 1)
+    ) {
+      int after = at + 4;
+      if (after < source.length && _isNameChar(source.codeUnitAt(after))) {
+        continue;
+      }
+      if (at != _pos && _isNameChar(source.codeUnitAt(at - 1))) continue;
+      _addText(source.substring(_pos, at));
+      _advance(at);
+      return;
+    }
+    _fail('@verbatim has no @end');
   }
 
   /// an `@` that starts a tag: not in the middle of a word or an email
