@@ -138,6 +138,7 @@ class Lexer {
       end = close + 1;
     }
 
+    bool standalone = _aloneOnLine(start, end);
     _flushText();
     _tokens.add(
       Token(
@@ -147,12 +148,15 @@ class Lexer {
         name: name,
         args: args,
         selfClosing: selfClosing,
-        standalone: _aloneOnLine(start, end),
+        standalone: standalone,
       ),
     );
     _advance(end);
     _tagEnd = end;
-    if (name == 'verbatim' && args == null && !selfClosing) _verbatim();
+    // only alone on its line, so `<code>@verbatim</code>` stays text
+    if (name == 'verbatim' && args == null && !selfClosing && standalone) {
+      _verbatim();
+    }
   }
 
   /// the body of `@verbatim` is plain text up to the next `@end`:

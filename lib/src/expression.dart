@@ -202,8 +202,26 @@ class IssetExpr extends Expr {
   }
 }
 
+/// the variable [name] from the outermost scope that has it: the
+/// globals or the shared data of `view()`, not the view data
+class OuterExpr extends Expr {
+  const OuterExpr(this.name);
+
+  final String name;
+
+  @override
+  Object? evaluate(Scope scope) {
+    Object? found;
+    for (Scope? at = scope; at != null; at = at.parent) {
+      if (at.vars.containsKey(name)) found = at.vars[name];
+    }
+    return found;
+  }
+}
+
 /// `@env('local')` or `@env(['local', 'staging'])`: true when the app
-/// runs in one of these environments
+/// runs in one of these environments. Case does not matter, like the
+/// cache default.
 class EnvExpr extends Expr {
   const EnvExpr(this.names, this.environment);
 
@@ -211,10 +229,17 @@ class EnvExpr extends Expr {
   final String environment;
 
   @override
-  Object? evaluate(Scope scope) => switch (names.evaluate(scope)) {
-    Iterable<Object?> list => list.contains(environment),
-    Object? name => name == environment,
-  };
+  Object? evaluate(Scope scope) {
+    Object? value = names.evaluate(scope);
+    Iterable<Object?> list = value is Iterable<Object?>
+        ? value
+        : <Object?>[value];
+    String env = environment.toLowerCase();
+    for (Object? name in list) {
+      if (name is String && name.toLowerCase() == env) return true;
+    }
+    return false;
+  }
 }
 
 /// `a ? b : c`

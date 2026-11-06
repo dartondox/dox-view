@@ -174,13 +174,15 @@ Total: {{ total }}
 
 Close a block tag with `@end`. `@else` works in all of them, but not in `@once` and `@verbatim`.
 
+Put `@auth`, `@guest`, `@production`, `@once` and `@verbatim` alone on their line. In the middle of text, like `@once upon a time`, they stay text.
+
 | Tag | What it does |
 | --- | --- |
 | `@isset(user.phone) ... @end` | shows when the value is not `null`. A field of `null` is not an error here. |
 | `@empty(items) ... @end` | shows when the value is false: `null`, `false`, `0`, `''`, an empty list or map |
 | `@auth ... @end` | shows when the user is logged in (`req.auth`) |
 | `@guest ... @end` | shows when the user is not logged in |
-| `@env('local') ... @end` | shows when `APP_ENV` is this value. A list works too: `@env(['local', 'staging'])` |
+| `@env('local') ... @end` | shows when `APP_ENV` is this value. A list works too: `@env(['local', 'staging'])`. Case does not matter. |
 | `@production ... @end` | shows when `APP_ENV` is `production` |
 | `@once ... @end` | shows only the first time in one render, for example a `<script>` in a component |
 | `@verbatim ... @end` | prints the text as it is: no `{{ }}` and no tags run inside it |
@@ -295,6 +297,8 @@ A template in `resources/views/components/` is also a tag with its name. A `.` i
 This prints `<button class="btn btn-big" type="submit">`.
 
 Only text, numbers and `true` are attributes. `true` prints the name alone, like `hidden`. `null`, `false`, lists, maps and objects are left out. You can still read any prop, like `$attributes.type`.
+
+`$attributes` keeps any attribute name, like `onclick`. So do not pass a map from the user as the props of a component.
 
 ## Forms
 

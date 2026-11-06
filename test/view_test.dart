@@ -75,7 +75,7 @@ void main() {
       '{{ \$slots.main }}</form>',
     );
     await File('${dir.path}/auth.dox.html')
-        .writeAsString('@auth in @else out @end');
+        .writeAsString('@auth\nin\n@else\nout\n@end\n');
     await File('${dir.path}/errors.dox.html')
         .writeAsString('[{{ errors.email }}]');
     View.configure(ViewConfig(path: dir.path, cache: false));
@@ -129,8 +129,8 @@ void main() {
   });
 
   test('@auth and @guest use req.auth', () async {
-    expect((await client.get('/auth')).body, ' out ');
-    expect((await client.get('/auth?in=1')).body, ' in ');
+    expect((await client.get('/auth')).body, 'out\n');
+    expect((await client.get('/auth?in=1')).body, 'in\n');
   });
 
   test('an app global errors wins when there are no errors', () async {

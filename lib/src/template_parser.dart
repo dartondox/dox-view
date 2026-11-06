@@ -23,6 +23,8 @@ const Set<String> _tags = <String>{
 
 /// tags like Blade. A component with the same name wins. With no `( )`,
 /// the ones in [_argDirectives] stay plain text, as before they were tags.
+/// The ones in [_blockDirectives] are tags only alone on their line, so
+/// text like `@once upon a time` stays text.
 const Set<String> _argDirectives = <String>{
   'isset',
   'empty',
@@ -95,7 +97,7 @@ class TemplateParser {
 
   bool _isTag(Token token) =>
       _tags.contains(token.name) ||
-      _blockDirectives.contains(token.name) ||
+      (_blockDirectives.contains(token.name) && token.standalone) ||
       (_argDirectives.contains(token.name) && token.args != null);
 
   Node _tag(Token token, String? component) {
@@ -122,8 +124,9 @@ class TemplateParser {
         if (token.args != null) {
           throw _error('@${token.name} takes no arguments', token);
         }
-        // `view()` sets `$auth` from `req.auth`
-        Expr loggedIn = const VariableExpr(r'$auth');
+        // `view()` sets `$auth` from `req.auth`. The view data can not
+        // hide it.
+        Expr loggedIn = const OuterExpr(r'$auth');
         return _if(
           token,
           token.name == 'auth' ? loggedIn : UnaryExpr('!', loggedIn),
@@ -131,7 +134,10 @@ class TemplateParser {
       case 'env':
         return _if(token, EnvExpr(_args(token, 1)[0], engine.environment));
       case 'production':
-        return _if(token, LiteralExpr(engine.environment == 'production'));
+        return _if(
+          token,
+          LiteralExpr(engine.environment.toLowerCase() == 'production'),
+        );
       case 'class':
         return ClassNode(_args(token, 1)[0], token.line);
       case 'checked':

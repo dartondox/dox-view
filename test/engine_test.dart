@@ -377,13 +377,43 @@ void main() {
       expect(render('a @empty b @class c'), 'a @empty b @class c');
     });
 
-    test('@auth and @guest read \$auth', () {
-      String template = '@auth in @else out @end @guest guest @end';
-      expect(render(template, <String, Object?>{r'$auth': true}), ' in  ');
-      expect(render(template), ' out   guest ');
+    test('@auth and @guest read the shared \$auth, not the data', () {
+      String template = '@auth\nin\n@else\nout\n@end\n@guest\nguest\n@end\n';
+      String renderWith(Map<String, Object?> data, bool loggedIn) =>
+          ViewEngine(MemoryTemplateLoader(<String, String>{'main': template}))
+              .render('main', data, <String, Object?>{r'$auth': loggedIn});
+
+      expect(renderWith(<String, Object?>{}, true), 'in\n');
+      expect(renderWith(<String, Object?>{}, false), 'out\nguest\n');
+      // the view data can not log a user in
       expect(
-        () => render("@auth('admin') x @end"),
+        renderWith(<String, Object?>{r'$auth': true}, false),
+        'out\nguest\n',
+      );
+      expect(render('@auth\nin\n@end\n'), '');
+      expect(
+        () => render("@auth('admin')\nx\n@end"),
         throwsA(isA<ViewException>()),
+      );
+    });
+
+    test('bare words in text stay text', () {
+      for (String text in <String>[
+        '<p>@once upon a time</p>',
+        '<p>We are @production-ready.</p>',
+        '<p>@guest-list</p>',
+        '<p>follow @guest on X</p>',
+        '<p>@auth is on</p>',
+      ]) {
+        expect(render(text), text);
+      }
+      // @verbatim in text does not eat the tags up to a later @end
+      expect(
+        render(
+          '<code>@verbatim</code>\n@if(on)\n{{ name }}\n@end\n',
+          <String, Object?>{'on': true, 'name': 'Ann'},
+        ),
+        '<code>@verbatim</code>\nAnn\n',
       );
     });
 
@@ -394,10 +424,13 @@ void main() {
       ).render('main');
 
       String template =
-          "@env('local')L @end @env(['staging', 'production'])S @end "
-          '@production P @else N @end';
-      expect(renderIn('local', template), 'L    N ');
-      expect(renderIn('production', template), ' S   P ');
+          "@env('local')L @end @env(['staging', 'production'])S @end\n"
+          '@production\nP\n@else\nN\n@end\n';
+      expect(renderIn('local', template), 'L  \nN\n');
+      expect(renderIn('production', template), ' S \nP\n');
+      // case does not matter, like the cache default
+      expect(renderIn('Production', template), ' S \nP\n');
+      expect(renderIn('LOCAL', template), 'L  \nN\n');
     });
 
     test('@class escapes the names', () {
@@ -428,19 +461,19 @@ void main() {
         ),
         '{{ name }} @if(x) {{{ x }}} {{ \nAnn',
       );
-      expect(() => render('@verbatim {{ x }}'), throwsA(isA<ViewException>()));
+      expect(() => render('@verbatim\n{{ x }}'), throwsA(isA<ViewException>()));
     });
 
     test('@once shows once in one render, in each render', () {
       ViewEngine engine = ViewEngine(
         const MemoryTemplateLoader(<String, String>{
           'main': '@!box() @!box() @!box()',
-          'components/box': '[@once<script>@end]',
+          'components/box': '[\n@once\n<script>\n@end\n]',
         }),
         cache: false,
       );
-      expect(engine.render('main'), '[<script>] [] []');
-      expect(engine.render('main'), '[<script>] [] []');
+      expect(engine.render('main'), '[\n<script>\n] [\n] [\n]');
+      expect(engine.render('main'), '[\n<script>\n] [\n] [\n]');
     });
 
     test('a component with the same name wins', () {
