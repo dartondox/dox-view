@@ -182,6 +182,66 @@ class BinaryExpr extends Expr {
   }
 }
 
+/// `@isset(a.b)`: true when [expr] is not null. A field of null is
+/// null here, not an error. With [value], it gives the value instead.
+class IssetExpr extends Expr {
+  const IssetExpr(this.expr, {this.value = false});
+
+  final Expr expr;
+  final bool value;
+
+  @override
+  Object? evaluate(Scope scope) {
+    Object? result;
+    try {
+      result = expr.evaluate(scope);
+    } on ViewException {
+      result = null;
+    }
+    return value ? result : result != null;
+  }
+}
+
+/// the variable [name] from the outermost scope that has it: the
+/// globals or the shared data of `view()`, not the view data
+class OuterExpr extends Expr {
+  const OuterExpr(this.name);
+
+  final String name;
+
+  @override
+  Object? evaluate(Scope scope) {
+    Object? found;
+    for (Scope? at = scope; at != null; at = at.parent) {
+      if (at.vars.containsKey(name)) found = at.vars[name];
+    }
+    return found;
+  }
+}
+
+/// `@env('local')` or `@env(['local', 'staging'])`: true when the app
+/// runs in one of these environments. Case does not matter, like the
+/// cache default.
+class EnvExpr extends Expr {
+  const EnvExpr(this.names, this.environment);
+
+  final Expr names;
+  final String environment;
+
+  @override
+  Object? evaluate(Scope scope) {
+    Object? value = names.evaluate(scope);
+    Iterable<Object?> list = value is Iterable<Object?>
+        ? value
+        : <Object?>[value];
+    String env = environment.toLowerCase();
+    for (Object? name in list) {
+      if (name is String && name.toLowerCase() == env) return true;
+    }
+    return false;
+  }
+}
+
 /// `a ? b : c`
 class ConditionalExpr extends Expr {
   const ConditionalExpr(this.condition, this.then, this.otherwise);
@@ -202,6 +262,7 @@ bool truthy(Object? value) => switch (value) {
   bool value => value,
   num value => value != 0,
   String value => value.isNotEmpty,
+  SafeString value => value.value.isNotEmpty,
   Iterable<Object?> value => value.isNotEmpty,
   Map<Object?, Object?> value => value.isNotEmpty,
   _ => true,
@@ -288,6 +349,9 @@ Object? readProperty(Object? target, String name) {
 
 /// `target.name(args)`: a function in a map, or a built in method
 Object? callMethod(Object? target, String name, List<Object?> args) {
+  if (target is Attributes && name == 'merge') {
+    return target.merge(args.isEmpty ? null : args[0]);
+  }
   Map<Object?, Object?>? map = _asMap(target);
   Object? function = map?[name];
   if (function is Function) return Function.apply(function, args);

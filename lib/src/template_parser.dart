@@ -21,6 +21,27 @@ const Set<String> _tags = <String>{
   'assign',
 };
 
+/// tags like Blade. A component with the same name wins. With no `( )`,
+/// the ones in [_argDirectives] stay plain text, as before they were tags.
+/// The ones in [_blockDirectives] are tags only alone on their line, so
+/// text like `@once upon a time` stays text.
+const Set<String> _argDirectives = <String>{
+  'isset',
+  'empty',
+  'env',
+  'class',
+  'checked',
+  'selected',
+  'disabled',
+};
+const Set<String> _blockDirectives = <String>{
+  'auth',
+  'guest',
+  'production',
+  'verbatim',
+  'once',
+};
+
 final RegExp _eachHeader = RegExp(
   r'^\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*)\s*)?\)|([A-Za-z_$][\w$]*))\s+in\s+([\s\S]+)$',
 );
@@ -37,6 +58,9 @@ class TemplateParser {
   final ViewEngine engine;
   final List<Token> _tokens;
   int _pos = 0;
+
+  /// the number of `@once` tags so far: each one has its own key
+  int _once = 0;
 
   List<Node> parse() => _body(const <String>{}, null).$1;
 
@@ -57,7 +81,7 @@ class TemplateParser {
           );
         case TokenKind.tag:
           String? component = _component(token);
-          if (component == null && !_tags.contains(token.name)) {
+          if (component == null && !_isTag(token)) {
             // eg. `@media` in CSS
             nodes.add(TextNode(token.value, token.line));
             continue;
@@ -71,11 +95,65 @@ class TemplateParser {
     return (nodes, null);
   }
 
+  bool _isTag(Token token) =>
+      _tags.contains(token.name) ||
+      (_blockDirectives.contains(token.name) && token.standalone) ||
+      (_argDirectives.contains(token.name) && token.args != null);
+
   Node _tag(Token token, String? component) {
+    if (component != null) {
+      List<Expr> args = _args(token, 0, 1);
+      return _componentNode(
+        token,
+        LiteralExpr(component),
+        args.isEmpty ? null : args[0],
+      );
+    }
     switch (token.name) {
       case 'if':
+        return _if(token, _expr(_rawArgs(token), token));
       case 'unless':
-        return _if(token);
+        return _if(token, UnaryExpr('!', _expr(_rawArgs(token), token)));
+      case 'isset':
+        return _if(token, IssetExpr(_expr(_rawArgs(token), token)));
+      case 'empty':
+        Expr value = IssetExpr(_expr(_rawArgs(token), token), value: true);
+        return _if(token, UnaryExpr('!', value));
+      case 'auth':
+      case 'guest':
+        if (token.args != null) {
+          throw _error('@${token.name} takes no arguments', token);
+        }
+        // `view()` sets `$auth` from `req.auth`. The view data can not
+        // hide it.
+        Expr loggedIn = const OuterExpr(r'$auth');
+        return _if(
+          token,
+          token.name == 'auth' ? loggedIn : UnaryExpr('!', loggedIn),
+        );
+      case 'env':
+        return _if(token, EnvExpr(_args(token, 1)[0], engine.environment));
+      case 'production':
+        return _if(
+          token,
+          LiteralExpr(engine.environment.toLowerCase() == 'production'),
+        );
+      case 'class':
+        return ClassNode(_args(token, 1)[0], token.line);
+      case 'checked':
+      case 'selected':
+      case 'disabled':
+        return AttributeNode(token.name, _args(token, 1)[0], token.line);
+      case 'verbatim':
+        List<Node> text = _body(const <String>{'end'}, token).$1;
+        return IfNode(
+          <(Expr, List<Node>)>[(const LiteralExpr(true), text)],
+          <Node>[],
+          token.line,
+        );
+      case 'once':
+        List<Node> body = _body(const <String>{'end'}, token).$1;
+        return OnceNode('$name#${_once++}', body, token.line);
       case 'each':
         return _each(token);
       case 'include':
@@ -106,21 +184,15 @@ class TemplateParser {
       case 'end':
         throw _error('@${token.name} has no matching tag before it', token);
     }
-    List<Expr> args = _args(token, 0, 1);
-    return _componentNode(
-      token,
-      LiteralExpr(component),
-      args.isEmpty ? null : args[0],
-    );
+    throw StateError('unknown tag @${token.name}');
   }
 
-  Node _if(Token token) {
-    Expr condition = _expr(_rawArgs(token), token);
-    if (token.name == 'unless') condition = UnaryExpr('!', condition);
+  /// `@if` and the tags like it. Only `@if` has `@elseif`.
+  Node _if(Token token, Expr condition) {
     List<(Expr, List<Node>)> branches = <(Expr, List<Node>)>[];
-    Set<String> stops = token.name == 'unless'
-        ? const <String>{'else', 'end'}
-        : const <String>{'elseif', 'else', 'end'};
+    Set<String> stops = token.name == 'if'
+        ? const <String>{'elseif', 'else', 'end'}
+        : const <String>{'else', 'end'};
     while (true) {
       (List<Node>, Token?) body = _body(stops, token);
       branches.add((condition, body.$1));

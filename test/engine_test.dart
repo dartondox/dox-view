@@ -357,6 +357,184 @@ void main() {
     });
   });
 
+  group('Blade tags', () {
+    test('@isset and @empty, with @else', () {
+      String template =
+          '@isset(user.name)set @else not @end '
+          '@empty(items)empty @else full @end';
+      expect(
+        render(template, <String, Object?>{
+          'user': <String, Object?>{'name': 'Ann'},
+          'items': <int>[1],
+        }),
+        'set   full ',
+      );
+      // a field of null is not an error here
+      expect(render(template), ' not  empty ');
+    });
+
+    test('with no ( ), @empty and @class stay text', () {
+      expect(render('a @empty b @class c'), 'a @empty b @class c');
+    });
+
+    test('@auth and @guest read the shared \$auth, not the data', () {
+      String template = '@auth\nin\n@else\nout\n@end\n@guest\nguest\n@end\n';
+      String renderWith(Map<String, Object?> data, bool loggedIn) =>
+          ViewEngine(MemoryTemplateLoader(<String, String>{'main': template}))
+              .render('main', data, <String, Object?>{r'$auth': loggedIn});
+
+      expect(renderWith(<String, Object?>{}, true), 'in\n');
+      expect(renderWith(<String, Object?>{}, false), 'out\nguest\n');
+      // the view data can not log a user in
+      expect(
+        renderWith(<String, Object?>{r'$auth': true}, false),
+        'out\nguest\n',
+      );
+      expect(render('@auth\nin\n@end\n'), '');
+      expect(
+        () => render("@auth('admin')\nx\n@end"),
+        throwsA(isA<ViewException>()),
+      );
+    });
+
+    test('bare words in text stay text', () {
+      for (String text in <String>[
+        '<p>@once upon a time</p>',
+        '<p>We are @production-ready.</p>',
+        '<p>@guest-list</p>',
+        '<p>follow @guest on X</p>',
+        '<p>@auth is on</p>',
+      ]) {
+        expect(render(text), text);
+      }
+      // @verbatim in text does not eat the tags up to a later @end
+      expect(
+        render(
+          '<code>@verbatim</code>\n@if(on)\n{{ name }}\n@end\n',
+          <String, Object?>{'on': true, 'name': 'Ann'},
+        ),
+        '<code>@verbatim</code>\nAnn\n',
+      );
+    });
+
+    test('@env and @production', () {
+      String renderIn(String environment, String source) => ViewEngine(
+        MemoryTemplateLoader(<String, String>{'main': source}),
+        environment: environment,
+      ).render('main');
+
+      String template =
+          "@env('local')L @end @env(['staging', 'production'])S @end\n"
+          '@production\nP\n@else\nN\n@end\n';
+      expect(renderIn('local', template), 'L  \nN\n');
+      expect(renderIn('production', template), ' S \nP\n');
+      // case does not matter, like the cache default
+      expect(renderIn('Production', template), ' S \nP\n');
+      expect(renderIn('LOCAL', template), 'L  \nN\n');
+    });
+
+    test('@class escapes the names', () {
+      expect(
+        render(
+          "<a @class(['btn', { active: on, off: !on }, bad])>",
+          <String, Object?>{'on': true, 'bad': '"><script>'},
+        ),
+        '<a class="btn active &quot;&gt;&lt;script&gt;">',
+      );
+    });
+
+    test('@checked, @selected and @disabled', () {
+      expect(
+        render(
+          '<input @checked(a)><option @selected(b)><button @disabled(a)>',
+          <String, Object?>{'a': true, 'b': false},
+        ),
+        '<input checked><option ><button disabled>',
+      );
+    });
+
+    test('@verbatim does not run anything inside', () {
+      expect(
+        render(
+          '@verbatim\n{{ name }} @if(x) {{{ x }}} {{ \n@end\n{{ name }}',
+          <String, Object?>{'name': 'Ann'},
+        ),
+        '{{ name }} @if(x) {{{ x }}} {{ \nAnn',
+      );
+      expect(() => render('@verbatim\n{{ x }}'), throwsA(isA<ViewException>()));
+    });
+
+    test('@once shows once in one render, in each render', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{
+          'main': '@!box() @!box() @!box()',
+          'components/box': '[\n@once\n<script>\n@end\n]',
+        }),
+        cache: false,
+      );
+      expect(engine.render('main'), '[\n<script>\n] [\n] [\n]');
+      expect(engine.render('main'), '[\n<script>\n] [\n] [\n]');
+    });
+
+    test('a component with the same name wins', () {
+      expect(
+        render('@!class({ a: 1 })', <String, Object?>{}, <String, String>{
+          'components/class': 'component {{ a }}',
+        }),
+        'component 1',
+      );
+    });
+  });
+
+  group('component attributes and slots', () {
+    Map<String, String> templates = <String, String>{
+      'components/button':
+          "<button {{ \$attributes.merge({ class: 'btn', type: 'button' }) }}>"
+          '{{ \$slot }}|{{ \$slots.main }}</button>',
+      'components/attrs': '<i {{ \$attributes }}>{{ \$attributes.id }}</i>',
+      'components/check': '@if(\$slots.main)full @else empty @end',
+    };
+
+    test('merge joins class, a prop wins, and values are escaped', () {
+      expect(
+        render(
+          "@!button({ class: 'big', type: 'submit', title: t })",
+          <String, Object?>{'t': '"x"'},
+          templates,
+        ),
+        '<button class="btn big" type="submit" title="&quot;x&quot;">'
+        '|</button>',
+      );
+    });
+
+    test('\$attributes prints text, numbers and true only', () {
+      expect(
+        render(
+          "@!attrs({ id: 'a', n: 2, hidden: true, off: false, list: [1], "
+          "'bad\"name': 1 })",
+          <String, Object?>{},
+          templates,
+        ),
+        '<i id="a" n="2" hidden>a</i>',
+      );
+    });
+
+    test('\$slot and \$slots.main are empty text when the slot is empty', () {
+      expect(
+        render('@!button()', <String, Object?>{}, templates),
+        '<button class="btn" type="button">|</button>',
+      );
+      expect(
+        render('@check() @end', <String, Object?>{}, templates),
+        ' empty ',
+      );
+      expect(
+        render('@check() x @end', <String, Object?>{}, templates),
+        'full ',
+      );
+    });
+  });
+
   group('globals', () {
     test('every template can use them', () {
       ViewEngine engine = ViewEngine(

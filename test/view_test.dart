@@ -31,7 +31,25 @@ class PlainRouter extends Router {
   @override
   void register() {
     Route.get('/plain', (DoxRequest req) => view(req, 'errors'));
+    Route.get('/auth', (DoxRequest req) {
+      if (req.uri.queryParameters.containsKey('in')) req.auth = LoggedIn();
+      return view(req, 'auth');
+    });
   }
+}
+
+class LoggedIn implements IAuth {
+  @override
+  bool isLoggedIn() => true;
+
+  @override
+  T? user<T>() => null;
+
+  @override
+  Map<String, dynamic>? toJson() => null;
+
+  @override
+  Future<void> verifyToken(IDoxRequest req) async {}
 }
 
 void main() {
@@ -56,6 +74,8 @@ void main() {
       '<form method="POST" action="{{ request.path }}">{{ csrfField() }}'
       '{{ \$slots.main }}</form>',
     );
+    await File('${dir.path}/auth.dox.html')
+        .writeAsString('@auth\nin\n@else\nout\n@end\n');
     await File('${dir.path}/errors.dox.html')
         .writeAsString('[{{ errors.email }}]');
     View.configure(ViewConfig(path: dir.path, cache: false));
@@ -106,6 +126,21 @@ void main() {
     expect(res.status, 200);
     expect(res.body, '[]');
     expect(View.render('errors'), '[]');
+  });
+
+  test('@auth and @guest use req.auth', () async {
+    expect((await client.get('/auth')).body, 'out\n');
+    expect((await client.get('/auth?in=1')).body, 'in\n');
+  });
+
+  test('an app global errors wins when there are no errors', () async {
+    View.global('errors', <String, String>{'email': 'global'});
+    try {
+      expect((await client.get('/plain')).body, '[global]');
+      expect(View.render('errors'), '[global]');
+    } finally {
+      View.engine.globals.vars.remove('errors');
+    }
   });
 
   test('View.render gives a string, eg. for mail', () {

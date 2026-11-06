@@ -25,6 +25,9 @@ class RenderContext {
   String template = '';
   int _depth = 0;
 
+  /// the `@once` blocks that rendered already
+  final Set<String> once = <String>{};
+
   /// [expr], with the template and [line] in any error
   Object? eval(Expr expr, Scope scope, int line) {
     try {
@@ -213,7 +216,8 @@ class IncludeNode extends Node {
 }
 
 /// `@component('name', props) ... @end`. The component sees only its
-/// props, `$props`, `$slots`, the shared data and the globals.
+/// props, `$props`, `$slots`, `$slot`, `$attributes`, the shared data
+/// and the globals.
 class ComponentNode extends Node {
   const ComponentNode(this.name, this.props, this.main, this.slots, super.line);
 
@@ -246,16 +250,23 @@ class ComponentNode extends Node {
 
     Map<String, Object?> rendered = <String, Object?>{};
     String content = _slot(ctx, main, scope);
-    if (content.trim().isNotEmpty) rendered['main'] = SafeString(content);
+    // like Blade's `$slot`, the main slot is always there: empty text
+    // when it has only spaces
+    rendered['main'] = SafeString(content.trim().isEmpty ? '' : content);
     for (MapEntry<String, List<Node>> slot in slots.entries) {
       rendered[slot.key] = SafeString(_slot(ctx, slot.value, scope));
     }
 
-    Scope inner = Scope(<String, Object?>{
+    Map<String, Object?> vars = <String, Object?>{
       for (MapEntry<Object?, Object?> prop in props.entries)
         '${prop.key}': prop.value,
+    };
+    Scope inner = Scope(<String, Object?>{
+      ...vars,
       r'$props': props,
       r'$slots': rendered,
+      r'$slot': rendered['main'],
+      r'$attributes': Attributes(vars),
     }, ctx.shared);
     ctx.renderTemplate(template, inner, out, line);
   }
@@ -305,5 +316,65 @@ class LetNode extends Node {
     } on ViewException catch (error) {
       throw ViewException(error.message, template: ctx.template, line: line);
     }
+  }
+}
+
+/// `@class(['btn', { active: isActive }])`: `class="..."` with the
+/// names whose value is true. The output is escaped.
+class ClassNode extends Node {
+  const ClassNode(this.expr, super.line);
+
+  final Expr expr;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    List<String> names = <String>[];
+    _add(names, ctx.eval(expr, scope, line));
+    out.write('class="${escapeHtml(names.join(' '))}"');
+  }
+
+  /// text, a map of name to condition, or a list of these
+  static void _add(List<String> names, Object? value) {
+    switch (value) {
+      case String value:
+        if (value.isNotEmpty) names.add(value);
+      case Map<Object?, Object?> value:
+        for (MapEntry<Object?, Object?> entry in value.entries) {
+          if (truthy(entry.value)) names.add('${entry.key}');
+        }
+      case Iterable<Object?> value:
+        for (Object? item in value) {
+          _add(names, item);
+        }
+    }
+  }
+}
+
+/// `@checked(x)`, `@selected(x)` and `@disabled(x)`: the attribute name
+/// when x is true
+class AttributeNode extends Node {
+  const AttributeNode(this.name, this.expr, super.line);
+
+  final String name;
+  final Expr expr;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    if (truthy(ctx.eval(expr, scope, line))) out.write(name);
+  }
+}
+
+/// `@once ... @end`: the body shows only the first time in one render,
+/// eg. a `<script>` in a component that is used many times
+class OnceNode extends Node {
+  const OnceNode(this.key, this.body, super.line);
+
+  /// the template and the number of the tag in it
+  final String key;
+  final List<Node> body;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    if (ctx.once.add(key)) ctx.renderNodes(body, scope, out);
   }
 }
