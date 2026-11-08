@@ -1,4 +1,4 @@
-## Unreleased
+## 3.1.0
 
 - New tags: `@isset`, `@empty`, `@auth`, `@guest`, `@env`, `@production`, `@once`, `@verbatim`, `@class`, `@checked`, `@selected` and `@disabled`. A component with the same name still wins. With no `( )`, `@isset`, `@empty`, `@env`, `@class`, `@checked`, `@selected` and `@disabled` stay plain text. `@auth`, `@guest`, `@production`, `@once` and `@verbatim` are tags only alone on their line, so text like `@once upon a time` stays text. `@env` and `@production` ignore case, like the cache default.
 - `ViewEngine` takes `environment` for `@env` and `@production`. By default it is `APP_ENV`.
