@@ -176,6 +176,8 @@ Close a block tag with `@end`. `@else` works in all of them, but not in `@once` 
 
 Put `@auth`, `@guest`, `@production`, `@once` and `@verbatim` alone on their line. In the middle of text, like `@once upon a time`, they stay text.
 
+With a space before the `(`, in the middle of a line, a tag is used only when its args are a valid expression. `@isset`, `@empty` and `@env` also need an `@end` after them. So text like `@empty (none)` or `@class (see docs)` stays text. With no space, like `@empty(items)`, or alone on its line, a tag is always a tag.
+
 | Tag | What it does |
 | --- | --- |
 | `@isset(user.phone) ... @end` | shows when the value is not `null`. A field of `null` is not an error here. |
@@ -195,7 +197,7 @@ Put `@auth`, `@guest`, `@production`, `@once` and `@verbatim` alone on their lin
 @end
 ```
 
-`@auth` and `@guest` use the `req.auth` that `view()` gets. In `View.render` there is no request, so `@guest` shows.
+`@auth` and `@guest` use the `req.auth` that `view()` gets. In `View.render` there is no request, so `@guest` shows. But a `$auth` key in the data of `View.render` makes `@auth` true there. So do not pass data from the user as `$auth`.
 
 `@verbatim` ends at the first `@end`, so the text inside can not have `@end`. Use it for code of a JavaScript framework that also uses `{{ }}`:
 
@@ -297,6 +299,12 @@ A template in `resources/views/components/` is also a tag with its name. A `.` i
 This prints `<button class="btn btn-big" type="submit">`.
 
 Only text, numbers and `true` are attributes. `true` prints the name alone, like `hidden`. `null`, `false`, lists, maps and objects are left out. You can still read any prop, like `$attributes.type`.
+
+`$attributes.except([...])` leaves out props that are only for the logic of the component, like a `variant`. It can go before `merge()`:
+
+```html
+<button {{ $attributes.except(['variant']).merge({ class: 'btn-' + variant }) }}>{{ $slot }}</button>
+```
 
 `$attributes` keeps any attribute name, like `onclick`. So do not pass a map from the user as the props of a component.
 

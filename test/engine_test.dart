@@ -373,6 +373,34 @@ void main() {
       expect(render(template), ' not  empty ');
     });
 
+    test('in text, @empty (x) and @class (see docs) stay text', () {
+      expect(
+        render('Lists show @empty (none) and @class (see docs).'),
+        'Lists show @empty (none) and @class (see docs).',
+      );
+      expect(render('a @isset (b) c @env (d) e'), 'a @isset (b) c @env (d) e');
+      // with a space and an @end after it, it works like on 3.1.0
+      Map<String, Object?> data = <String, Object?>{'x': 1, 'list': <int>[]};
+      expect(render('<p>@isset (x) hi @end</p>', data), '<p> hi </p>');
+      expect(render('a @empty (list) none @end b', data), 'a  none  b');
+      expect(render('<b>@isset (x)\nhi\n@end</b>', data), '<b>\nhi\n</b>');
+      // a block inside it has its own @end
+      expect(render('a @isset (x) @if(true) y @end z @end', data), 'a   y  z ');
+      // with no space, or alone on its line, it is still a tag
+      expect(render('@empty (x)\nnone\n@end\n'), 'none\n');
+      expect(
+        () => render('a @class(see docs) b'),
+        throwsA(isA<ViewException>()),
+      );
+    });
+
+    test('spaces after the last tag at the end of the file are removed', () {
+      expect(render('@if(true)\nyes\n@end   '), 'yes\n');
+      expect(render('@if(true)\nyes\n@end  \n'), 'yes\n');
+      // not alone on its line: the spaces stay
+      expect(render('a @if(true) b @end  '), 'a  b   ');
+    });
+
     test('with no ( ), @empty and @class stay text', () {
       expect(render('a @empty b @class c'), 'a @empty b @class c');
     });
@@ -504,6 +532,21 @@ void main() {
         ),
         '<button class="btn big" type="submit" title="&quot;x&quot;">'
         '|</button>',
+      );
+    });
+
+    test('\$attributes.except leaves out logic props', () {
+      expect(
+        render(
+          "@!attrs({ id: 'a', variant: 'big', size: 2 })",
+          <String, Object?>{},
+          <String, String>{
+            'components/attrs':
+                "<i {{ \$attributes.except(['variant', 'size']).merge({ class: 'x' }) }}>"
+                '{{ \$attributes.except(\'id\') }}</i>',
+          },
+        ),
+        '<i class="x" id="a">variant="big" size="2"</i>',
       );
     });
 

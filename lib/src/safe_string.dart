@@ -43,6 +43,22 @@ class Attributes extends SafeString {
     return SafeString(_render(merged));
   }
 
+  /// `{{ $attributes.except(['variant']) }}`: the attributes without
+  /// these props, for props that are only for the logic of the
+  /// component. It can go before `merge()`.
+  Attributes except(Object? names) {
+    Set<String> skip = <String>{
+      if (names is Iterable<Object?>)
+        for (Object? name in names) '$name'
+      else if (names != null)
+        '$names',
+    };
+    return Attributes(<String, Object?>{
+      for (MapEntry<String, Object?> entry in props.entries)
+        if (!skip.contains(entry.key)) entry.key: entry.value,
+    });
+  }
+
   static final RegExp _name = RegExp(r'^[A-Za-z_:@][\w:.@-]*$');
 
   static String _render(Map<String, Object?> attributes) {

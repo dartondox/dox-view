@@ -34,6 +34,9 @@ const Set<String> _argDirectives = <String>{
   'selected',
   'disabled',
 };
+
+/// the ones of [_argDirectives] with a body and an `@end`
+const Set<String> _endDirectives = <String>{'isset', 'empty', 'env'};
 const Set<String> _blockDirectives = <String>{
   'auth',
   'guest',
@@ -46,7 +49,9 @@ final RegExp _eachHeader = RegExp(
   r'^\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*)\s*)?\)|([A-Za-z_$][\w$]*))\s+in\s+([\s\S]+)$',
 );
 final RegExp _letHeader = RegExp(r'^\s*([A-Za-z_$][\w$]*)\s*=([\s\S]+)$');
-final RegExp _lineStart = RegExp(r'^[ \t]*\r?\n');
+// the rest of the line after a tag: spaces and the line break, or
+// spaces up to the end of the file
+final RegExp _lineStart = RegExp(r'^[ \t]*(?:\r?\n|$)');
 final RegExp _lineEnd = RegExp(r'[ \t]*$');
 
 /// Turns the tokens of a template into nodes.
@@ -81,7 +86,7 @@ class TemplateParser {
           );
         case TokenKind.tag:
           String? component = _component(token);
-          if (component == null && !_isTag(token)) {
+          if (component == null && !_isTag(token, _pos - 1)) {
             // eg. `@media` in CSS
             nodes.add(TextNode(token.value, token.line));
             continue;
@@ -95,10 +100,63 @@ class TemplateParser {
     return (nodes, null);
   }
 
-  bool _isTag(Token token) =>
-      _tags.contains(token.name) ||
-      (_blockDirectives.contains(token.name) && token.standalone) ||
-      (_argDirectives.contains(token.name) && token.args != null);
+  /// [index] is the place of [token] in the tokens
+  bool _isTag(Token token, int index) {
+    if (_tags.contains(token.name)) return true;
+    if (_blockDirectives.contains(token.name)) return token.standalone;
+    if (!_argDirectives.contains(token.name) || token.args == null) {
+      return false;
+    }
+    // text like `@empty (none)` or `@class (see docs)`: with a space
+    // before `(`, in the middle of a line, it is a tag only when its args
+    // parse. `@isset`, `@empty` and `@env` also need an `@end` after them.
+    if (token.standalone || !_spaceBeforeArgs(token)) return true;
+    try {
+      if (ExprParser(token.args!).parseList().length != 1) return false;
+    } on ViewException {
+      return false;
+    }
+    return !_endDirectives.contains(token.name) || _hasEnd(index + 1);
+  }
+
+  /// true when an `@end` after [from] closes the block that starts just
+  /// before it. The blocks in between are counted.
+  // ponytail: scans to the end for each such tag. Only tags with a space
+  // before `(` in the middle of a line get here, so it stays rare. It does
+  // not know the blocks around it, so the `@end` of an outer block counts,
+  // the same as on 3.1.0.
+  bool _hasEnd(int from) {
+    int depth = 1;
+    for (int i = from; i < _tokens.length; i++) {
+      Token token = _tokens[i];
+      if (token.kind != TokenKind.tag) continue;
+      if (token.name == 'end') {
+        if (--depth == 0) return true;
+      } else if (_opensBlock(token, i)) {
+        depth++;
+      }
+    }
+    return false;
+  }
+
+  /// true for a tag that needs its own `@end`
+  bool _opensBlock(Token token, int index) {
+    if (_component(token) != null) return !token.selfClosing;
+    if (!_isTag(token, index)) return false;
+    return switch (token.name) {
+      'else' || 'elseif' || 'include' || 'includeIf' => false,
+      'let' || 'assign' || 'class' || 'checked' => false,
+      'selected' || 'disabled' => false,
+      'component' => !token.selfClosing,
+      _ => true,
+    };
+  }
+
+  /// `@name (...)`, not `@name(...)`
+  bool _spaceBeforeArgs(Token token) {
+    int at = (token.selfClosing ? 2 : 1) + token.name.length;
+    return token.value.codeUnitAt(at) != 0x28; // (
+  }
 
   Node _tag(Token token, String? component) {
     if (component != null) {
