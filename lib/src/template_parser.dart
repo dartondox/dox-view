@@ -34,6 +34,9 @@ const Set<String> _argDirectives = <String>{
   'selected',
   'disabled',
 };
+
+/// the ones of [_argDirectives] with a body and an `@end`
+const Set<String> _endDirectives = <String>{'isset', 'empty', 'env'};
 const Set<String> _blockDirectives = <String>{
   'auth',
   'guest',
@@ -95,10 +98,30 @@ class TemplateParser {
     return (nodes, null);
   }
 
-  bool _isTag(Token token) =>
-      _tags.contains(token.name) ||
-      (_blockDirectives.contains(token.name) && token.standalone) ||
-      (_argDirectives.contains(token.name) && token.args != null);
+  bool _isTag(Token token) {
+    if (_tags.contains(token.name)) return true;
+    if (_blockDirectives.contains(token.name)) return token.standalone;
+    if (!_argDirectives.contains(token.name) || token.args == null) {
+      return false;
+    }
+    // text like `@empty (none)` or `@class (see docs)`: with a space
+    // before `(`, in the middle of a line, it is a tag only when it can
+    // be one. `@isset`, `@empty` and `@env` need an `@end`, so they stay
+    // text there.
+    if (token.standalone || !_spaceBeforeArgs(token)) return true;
+    if (_endDirectives.contains(token.name)) return false;
+    try {
+      return ExprParser(token.args!).parseList().length == 1;
+    } on ViewException {
+      return false;
+    }
+  }
+
+  /// `@name (...)`, not `@name(...)`
+  bool _spaceBeforeArgs(Token token) {
+    int at = (token.selfClosing ? 2 : 1) + token.name.length;
+    return token.value.codeUnitAt(at) != 0x28; // (
+  }
 
   Node _tag(Token token, String? component) {
     if (component != null) {

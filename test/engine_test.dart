@@ -373,6 +373,25 @@ void main() {
       expect(render(template), ' not  empty ');
     });
 
+    test('in text, @empty (x) and @class (see docs) stay text', () {
+      expect(
+        render('Lists show @empty (none) and @class (see docs).'),
+        'Lists show @empty (none) and @class (see docs).',
+      );
+      expect(render('a @isset (b) c @env (d) e'), 'a @isset (b) c @env (d) e');
+      // a valid one with a space still works in the middle of a line
+      expect(
+        render('<input @checked (on)>', <String, Object?>{'on': true}),
+        '<input checked>',
+      );
+      // with no space, or alone on its line, it is still a tag
+      expect(render('@empty (x)\nnone\n@end\n'), 'none\n');
+      expect(
+        () => render('a @class(see docs) b'),
+        throwsA(isA<ViewException>()),
+      );
+    });
+
     test('with no ( ), @empty and @class stay text', () {
       expect(render('a @empty b @class c'), 'a @empty b @class c');
     });
@@ -504,6 +523,21 @@ void main() {
         ),
         '<button class="btn big" type="submit" title="&quot;x&quot;">'
         '|</button>',
+      );
+    });
+
+    test('\$attributes.except leaves out logic props', () {
+      expect(
+        render(
+          "@!attrs({ id: 'a', variant: 'big', size: 2 })",
+          <String, Object?>{},
+          <String, String>{
+            'components/attrs':
+                "<i {{ \$attributes.except(['variant', 'size']).merge({ class: 'x' }) }}>"
+                '{{ \$attributes.except(\'id\') }}</i>',
+          },
+        ),
+        '<i class="x" id="a">variant="big" size="2"</i>',
       );
     });
 

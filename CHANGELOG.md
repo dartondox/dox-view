@@ -1,3 +1,8 @@
+## Unreleased
+
+- Fix: text like `@empty (none)` or `@class (see docs)` threw an error since 3.1.0. With a space before the `(`, in the middle of a line, a tag is now used only when it can be one. Else it stays text. `@isset`, `@empty` and `@env` with a space work only alone on their line. With no space, nothing changes.
+- New: `$attributes.except(['variant'])` leaves out props that are only for the logic of a component. It can go before `merge()`.
+
 ## 3.1.0
 
 - New tags: `@isset`, `@empty`, `@auth`, `@guest`, `@env`, `@production`, `@once`, `@verbatim`, `@class`, `@checked`, `@selected` and `@disabled`. A component with the same name still wins. With no `( )`, `@isset`, `@empty`, `@env`, `@class`, `@checked`, `@selected` and `@disabled` stay plain text. `@auth`, `@guest`, `@production`, `@once` and `@verbatim` are tags only alone on their line, so text like `@once upon a time` stays text. `@env` and `@production` ignore case, like the cache default.

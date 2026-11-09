@@ -352,6 +352,9 @@ Object? callMethod(Object? target, String name, List<Object?> args) {
   if (target is Attributes && name == 'merge') {
     return target.merge(args.isEmpty ? null : args[0]);
   }
+  if (target is Attributes && name == 'except') {
+    return target.except(args.isEmpty ? null : args[0]);
+  }
   Map<Object?, Object?>? map = _asMap(target);
   Object? function = map?[name];
   if (function is Function) return Function.apply(function, args);

@@ -176,6 +176,8 @@ Close a block tag with `@end`. `@else` works in all of them, but not in `@once` 
 
 Put `@auth`, `@guest`, `@production`, `@once` and `@verbatim` alone on their line. In the middle of text, like `@once upon a time`, they stay text.
 
+With a space before the `(`, in the middle of a line, a tag is used only when it can be one. So text like `@empty (none)` or `@class (see docs)` stays text. `@isset`, `@empty` and `@env` with a space work only alone on their line. With no space, like `@empty(items)`, a tag is always a tag.
+
 | Tag | What it does |
 | --- | --- |
 | `@isset(user.phone) ... @end` | shows when the value is not `null`. A field of `null` is not an error here. |
@@ -297,6 +299,12 @@ A template in `resources/views/components/` is also a tag with its name. A `.` i
 This prints `<button class="btn btn-big" type="submit">`.
 
 Only text, numbers and `true` are attributes. `true` prints the name alone, like `hidden`. `null`, `false`, lists, maps and objects are left out. You can still read any prop, like `$attributes.type`.
+
+`$attributes.except([...])` leaves out props that are only for the logic of the component, like a `variant`. It can go before `merge()`:
+
+```html
+<button {{ $attributes.except(['variant']).merge({ class: 'btn-' + variant }) }}>{{ $slot }}</button>
+```
 
 `$attributes` keeps any attribute name, like `onclick`. So do not pass a map from the user as the props of a component.
 
