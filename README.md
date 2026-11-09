@@ -176,7 +176,7 @@ Close a block tag with `@end`. `@else` works in all of them, but not in `@once` 
 
 Put `@auth`, `@guest`, `@production`, `@once` and `@verbatim` alone on their line. In the middle of text, like `@once upon a time`, they stay text.
 
-With a space before the `(`, in the middle of a line, a tag is used only when it can be one. So text like `@empty (none)` or `@class (see docs)` stays text. `@isset`, `@empty` and `@env` with a space work only alone on their line. With no space, like `@empty(items)`, a tag is always a tag.
+With a space before the `(`, in the middle of a line, a tag is used only when its args are a valid expression. `@isset`, `@empty` and `@env` also need an `@end` after them. So text like `@empty (none)` or `@class (see docs)` stays text. With no space, like `@empty(items)`, or alone on its line, a tag is always a tag.
 
 | Tag | What it does |
 | --- | --- |

@@ -379,11 +379,13 @@ void main() {
         'Lists show @empty (none) and @class (see docs).',
       );
       expect(render('a @isset (b) c @env (d) e'), 'a @isset (b) c @env (d) e');
-      // a valid one with a space still works in the middle of a line
-      expect(
-        render('<input @checked (on)>', <String, Object?>{'on': true}),
-        '<input checked>',
-      );
+      // with a space and an @end after it, it works like on 3.1.0
+      Map<String, Object?> data = <String, Object?>{'x': 1, 'list': <int>[]};
+      expect(render('<p>@isset (x) hi @end</p>', data), '<p> hi </p>');
+      expect(render('a @empty (list) none @end b', data), 'a  none  b');
+      expect(render('<b>@isset (x)\nhi\n@end</b>', data), '<b>\nhi\n</b>');
+      // a block inside it has its own @end
+      expect(render('a @isset (x) @if(true) y @end z @end', data), 'a   y  z ');
       // with no space, or alone on its line, it is still a tag
       expect(render('@empty (x)\nnone\n@end\n'), 'none\n');
       expect(
