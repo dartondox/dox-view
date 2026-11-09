@@ -197,7 +197,7 @@ With a space before the `(`, in the middle of a line, a tag is used only when it
 @end
 ```
 
-`@auth` and `@guest` use the `req.auth` that `view()` gets. In `View.render` there is no request, so `@guest` shows.
+`@auth` and `@guest` use the `req.auth` that `view()` gets. In `View.render` there is no request, so `@guest` shows. But a `$auth` key in the data of `View.render` makes `@auth` true there. So do not pass data from the user as `$auth`.
 
 `@verbatim` ends at the first `@end`, so the text inside can not have `@end`. Use it for code of a JavaScript framework that also uses `{{ }}`:
 

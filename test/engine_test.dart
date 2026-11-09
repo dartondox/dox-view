@@ -392,6 +392,13 @@ void main() {
       );
     });
 
+    test('spaces after the last tag at the end of the file are removed', () {
+      expect(render('@if(true)\nyes\n@end   '), 'yes\n');
+      expect(render('@if(true)\nyes\n@end  \n'), 'yes\n');
+      // not alone on its line: the spaces stay
+      expect(render('a @if(true) b @end  '), 'a  b   ');
+    });
+
     test('with no ( ), @empty and @class stay text', () {
       expect(render('a @empty b @class c'), 'a @empty b @class c');
     });

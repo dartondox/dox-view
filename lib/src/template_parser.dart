@@ -49,7 +49,9 @@ final RegExp _eachHeader = RegExp(
   r'^\s*(?:\(\s*([A-Za-z_$][\w$]*)\s*(?:,\s*([A-Za-z_$][\w$]*)\s*)?\)|([A-Za-z_$][\w$]*))\s+in\s+([\s\S]+)$',
 );
 final RegExp _letHeader = RegExp(r'^\s*([A-Za-z_$][\w$]*)\s*=([\s\S]+)$');
-final RegExp _lineStart = RegExp(r'^[ \t]*\r?\n');
+// the rest of the line after a tag: spaces and the line break, or
+// spaces up to the end of the file
+final RegExp _lineStart = RegExp(r'^[ \t]*(?:\r?\n|$)');
 final RegExp _lineEnd = RegExp(r'[ \t]*$');
 
 /// Turns the tokens of a template into nodes.

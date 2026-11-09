@@ -2,6 +2,8 @@
 
 - Fix: text like `@empty (none)` or `@class (see docs)` threw an error since 3.1.0. With a space before the `(`, in the middle of a line, a tag is now used only when it can be one. Else it stays text. `@isset`, `@empty` and `@env` with a space work only alone on their line. With no space, nothing changes.
 - New: `$attributes.except(['variant'])` leaves out props that are only for the logic of a component. It can go before `merge()`.
+- Fix: spaces after the last tag at the end of a file stayed in the output. A tag alone on its line now removes them, like it removes the line break.
+- Docs: a `$auth` key in the data of `View.render` makes `@auth` true there. Do not pass data from the user as `$auth`.
 
 ## 3.1.0
 
