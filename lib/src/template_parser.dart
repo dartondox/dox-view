@@ -157,6 +157,12 @@ class TemplateParser {
   /// the `@extends` of the template
   ExtendsNode? _layout;
 
+  /// the number of open blocks around the token that [_body] reads now
+  int _depth = 0;
+
+  /// see [_endScores]
+  List<int>? _scores;
+
   /// true for the name of a tag of the engine. A directive of the app
   /// can not use it.
   static bool isBuiltIn(String name) =>
@@ -178,6 +184,8 @@ class TemplateParser {
   /// stop tag.
   (List<Node>, Token?) _body(Set<String> stops, Token? opener) {
     List<Node> nodes = <Node>[];
+    int depth = _depth;
+    if (opener != null) _depth++;
     while (_pos < _tokens.length) {
       Token token = _tokens[_pos++];
       switch (token.kind) {
@@ -191,14 +199,17 @@ class TemplateParser {
           );
         case TokenKind.tag:
           String? component = _component(token);
-          if (component == null && !_isTag(token, _pos - 1)) {
+          if (component == null && !_isTag(token, _pos - 1, _depth)) {
             // eg. `@media` in CSS
             _warnBlade(token);
             nodes.add(TextNode(token.value, token.line));
             continue;
           }
           if (token.standalone) _trimLine(nodes);
-          if (stops.contains(token.name)) return (nodes, token);
+          if (stops.contains(token.name)) {
+            _depth = depth;
+            return (nodes, token);
+          }
           nodes.add(_tag(token, component));
       }
     }
@@ -223,8 +234,9 @@ class TemplateParser {
     engine.warn('$name:${token.line} "@${token.name}" is not a Dox tag. $hint');
   }
 
-  /// [index] is the place of [token] in the tokens
-  bool _isTag(Token token, int index) {
+  /// [index] is the place of [token] in the tokens. [depth] is the
+  /// number of open blocks around it.
+  bool _isTag(Token token, int index, int depth) {
     if (_tags.contains(token.name)) return true;
     if (_blockDirectives.contains(token.name)) return token.standalone;
     bool custom = engine.directiveFor(token.name) != null;
@@ -232,8 +244,8 @@ class TemplateParser {
     if (token.args == null) return false;
     // text like `@empty (none)` or `@class (see docs)`: with a space
     // before `(`, in the middle of a line, it is a tag only when its args
-    // parse. A tag with a body, like `@isset` or `@push`, also needs an
-    // `@end` after it.
+    // parse. A tag with a body, like `@isset` or `@push`, also needs its
+    // own `@end` after it, on any line.
     // The layout, stack and `@method` tags also need text in quotes as
     // the first arg, on any line: `git @push (force)` stays text.
     if (!_spaceBeforeArgs(token)) return true;
@@ -241,14 +253,15 @@ class TemplateParser {
     if (_quotedDirectives.contains(token.name) && !_quotedFirstArg(token)) {
       return false;
     }
-    if (token.standalone) return true;
+    bool needsEnd = _hasBody(token);
+    if (token.standalone) return !needsEnd || _hasEnd(index + 1, depth);
     int? count = _argCount(token);
     if (count == null) return false;
     if (custom) return true;
     if (count != 1 && !(count == 2 && _twoArgDirectives.contains(token.name))) {
       return false;
     }
-    return !_hasBody(token) || _hasEnd(index + 1);
+    return !needsEnd || _hasEnd(index + 1, depth);
   }
 
   /// the number of args of [token], null when they do not parse
@@ -278,29 +291,43 @@ class TemplateParser {
       !(token.name == 'section' && _argCount(token) == 2);
 
   /// true when an `@end` after [from] closes the block that starts just
-  /// before it. The blocks in between are counted.
-  // ponytail: scans to the end for each such tag. Only tags with a space
-  // before `(` in the middle of a line get here, so it stays rare. It does
-  // not know the blocks around it, so the `@end` of an outer block counts,
-  // the same as on 3.1.0.
-  bool _hasEnd(int from) {
-    int depth = 1;
-    for (int i = from; i < _tokens.length; i++) {
+  /// before it, and more `@end` tags follow for the [depth] blocks around
+  /// it. The blocks in between are counted.
+  bool _hasEnd(int from, int depth) => _endScores()[from] > depth;
+
+  /// for each place in the tokens: the most `@end` tags, less the blocks
+  /// that open, from that place up to some later place. So `@end @end`
+  /// is 2, and `@if(x) @end @end` is 1.
+  /// It is done once, from the last token back. Before, each tag with a
+  /// space before `(` scanned all the tags after it, again and again for
+  /// tags inside it, so a deep template took very long.
+  /// A tag here does not know the blocks around it. This only adds
+  /// blocks, so a tag never finds an `@end` that is not there.
+  List<int> _endScores() {
+    List<int>? scores = _scores;
+    if (scores != null) return scores;
+    // set it first: _opensBlock reads the places after i
+    scores = _scores = List<int>.filled(_tokens.length + 1, 0);
+    for (int i = _tokens.length - 1; i >= 0; i--) {
       Token token = _tokens[i];
-      if (token.kind != TokenKind.tag) continue;
-      if (token.name == 'end') {
-        if (--depth == 0) return true;
-      } else if (_opensBlock(token, i)) {
-        depth++;
+      int step = 0;
+      if (token.kind == TokenKind.tag) {
+        if (token.name == 'end') {
+          step = 1;
+        } else if (_opensBlock(token, i)) {
+          step = -1;
+        }
       }
+      int score = step + scores[i + 1];
+      scores[i] = score < 0 ? 0 : score;
     }
-    return false;
+    return scores;
   }
 
   /// true for a tag that needs its own `@end`
   bool _opensBlock(Token token, int index) {
     if (_component(token) != null) return !token.selfClosing;
-    if (!_isTag(token, index)) return false;
+    if (!_isTag(token, index, 0)) return false;
     if (engine.directiveFor(token.name) != null) return false;
     return switch (token.name) {
       'else' || 'elseif' || 'include' || 'includeIf' => false,

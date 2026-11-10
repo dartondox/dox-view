@@ -418,6 +418,43 @@ void main() {
       );
     });
 
+    test(
+      '@empty (none) alone on its line, with no @end of its own, is text',
+      () {
+        expect(render('@empty (none)\n'), '@empty (none)\n');
+        expect(
+          render('Items:\n@isset (see below)\n'),
+          'Items:\n@isset (see below)\n',
+        );
+        // the @end of the block around it is not its own
+        Map<String, Object?> data = <String, Object?>{
+          'items': <int>[1],
+        };
+        expect(
+          render('@each(i in items)\n{{ i }}\n@empty (none)\n@end\n', data),
+          '1\n@empty (none)\n',
+        );
+        expect(render('@if(true)\n@empty (x)\nnone\n@end\n@end\n'), 'none\n');
+        // a tag in the middle of a line also skips the @end around it
+        expect(
+          render('@if(true)\na @empty (none) b\n@end\n'),
+          'a @empty (none) b\n',
+        );
+      },
+    );
+
+    test('many nested tags with a space before ( parse fast', () {
+      // each tag used to scan all the tags after it, again for each
+      // tag inside it: 2 more levels took 4 times as long. 200 levels
+      // would never end.
+      int levels = 200;
+      String source = 'a ${'@isset (x) ' * levels}y${' @end' * levels} b';
+      expect(
+        render(source, <String, Object?>{'x': 1}),
+        'a ${' ' * levels}y${' ' * levels} b',
+      );
+    });
+
     test('spaces after the last tag at the end of the file are removed', () {
       expect(render('@if(true)\nyes\n@end   '), 'yes\n');
       expect(render('@if(true)\nyes\n@end  \n'), 'yes\n');
