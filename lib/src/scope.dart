@@ -3,10 +3,25 @@ import 'view_exception.dart';
 /// The variables a template can read. A scope looks in its parent for
 /// a name it does not have.
 class Scope {
-  Scope(this.vars, [this.parent]);
+  Scope(this.vars, [this.parent])
+    : strictVariables = parent?.strictVariables ?? false,
+      stringZeroIsFalse = parent?.stringZeroIsFalse ?? false;
+
+  /// the first scope of an engine. The scopes under it get its options.
+  Scope.root(
+    this.vars, {
+    this.strictVariables = false,
+    this.stringZeroIsFalse = false,
+  }) : parent = null;
 
   final Map<String, Object?> vars;
   final Scope? parent;
+
+  /// a template that reads a variable no scope has gets an error
+  final bool strictVariables;
+
+  /// the text `'0'` is false in a condition
+  final bool stringZeroIsFalse;
 
   /// the value of [name], null when no scope has it
   Object? lookup(String name) {
@@ -17,6 +32,14 @@ class Scope {
       scope = scope.parent;
     }
     return null;
+  }
+
+  /// true when this scope or a parent has [name], also with a null value
+  bool has(String name) {
+    for (Scope? scope = this; scope != null; scope = scope.parent) {
+      if (scope.vars.containsKey(name)) return true;
+    }
+    return false;
   }
 
   /// `@let`: a new variable in this scope

@@ -50,6 +50,10 @@ class Lexer {
   /// where the last tag ended: a tag can start right there, eg. `@end@if`
   int _tagEnd = -1;
 
+  /// the lines with a `{!! !!}` of Blade. It stays text; the parser
+  /// warns about it.
+  final List<int> bladeRawLines = <int>[];
+
   List<Token> tokenize() {
     while (_pos < source.length) {
       int next = _nextSpecial(_pos);
@@ -72,6 +76,10 @@ class Lexer {
       } else if (_isTagStart(_pos)) {
         _tag();
       } else {
+        if (source.startsWith('{!!', _pos) &&
+            source.indexOf('!!}', _pos + 3) != -1) {
+          bladeRawLines.add(_line);
+        }
         _addText(source[_pos]);
         _advance(_pos + 1);
       }

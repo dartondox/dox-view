@@ -1,9 +1,44 @@
+import 'dart:convert';
+
+import 'view_exception.dart';
+
 /// HTML that is printed as it is. `{{ }}` does not escape it.
 /// ```
 /// View.global('logo', SafeString('<img src="/logo.svg">'));
 /// ```
 class SafeString {
   const SafeString(this.value);
+
+  /// [value] as JSON for a page: `@json(value)` and `{{ json(value) }}`.
+  /// `<`, `>`, `&`, `'` and the line separators U+2028 and U+2029 are
+  /// written as `\uXXXX`. So the text is safe inside a `<script>` block
+  /// and inside an attribute in single quotes. An object with `toJson()`
+  /// works. A value that can not be JSON throws a [ViewException].
+  factory SafeString.json(Object? value) {
+    String text;
+    try {
+      text = jsonEncode(value);
+    } on JsonUnsupportedObjectError catch (error) {
+      throw ViewException(
+        'can not make JSON of ${error.unsupportedObject.runtimeType}',
+      );
+    }
+    // ponytail: one pass per character. One pass in all if it shows in
+    // a profile.
+    for (MapEntry<String, String> escape in _jsonEscapes.entries) {
+      text = text.replaceAll(escape.key, escape.value);
+    }
+    return SafeString(text);
+  }
+
+  static const Map<String, String> _jsonEscapes = <String, String>{
+    '<': r'\u003C',
+    '>': r'\u003E',
+    '&': r'\u0026',
+    "'": r'\u0027',
+    '\u2028': r'\u2028',
+    '\u2029': r'\u2029',
+  };
 
   final String value;
 
