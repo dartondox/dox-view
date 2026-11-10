@@ -735,6 +735,16 @@ void main() {
       }
     });
 
+    test('on: @error with no errors prints nothing', () {
+      expect(
+        Harness.engine(
+          "[@error('email')\n{{ message }}\n@end\n]",
+          strictVariables: true,
+        ).render('main'),
+        '[]',
+      );
+    });
+
     test('on: components, includes, loops and globals work', () {
       expect(
         Harness.engine(
