@@ -5,12 +5,13 @@ import 'package:dox_core/dox_core.dart';
 import 'safe_string.dart';
 import 'template_loader.dart';
 import 'view_config.dart';
+import 'view_directive.dart';
 import 'view_engine.dart';
 
 /// Render the template [name] (eg. `users/index`) as an HTML response.
 ///
 /// With a session, the templates can also use `old('field')`,
-/// `session('key')`, `csrfToken()` and `csrfField()`. Every template can
+/// `session('key')`, `csrfToken()`, `csrfField()` and `@csrf`. Every template can
 /// use `errors` (empty with no session), `request.path`, `request.method`
 /// and `request.query`. Components
 /// and layouts see these too.
@@ -36,11 +37,23 @@ class View {
   static ViewEngine get engine => _engine ??= _make(const ViewConfig());
 
   /// set up the engine with [config]. Globals added before with
-  /// [global] are kept. The globals of [config] win on the same name.
+  /// [global] and directives added before with [directive] are kept.
+  /// The ones of [config] win on the same name.
   static void configure(ViewConfig config) {
-    Map<String, Object?> before =
-        _engine?.globals.vars ?? const <String, Object?>{};
-    _engine = _make(config, before);
+    ViewEngine? old = _engine;
+    _engine = _make(
+      config,
+      old?.globals.vars ?? const <String, Object?>{},
+      old?.directives ?? const <String, ViewDirective>{},
+    );
+  }
+
+  /// add the tag `@name(...)` for every template
+  /// ```
+  /// View.directive('datetime', DateTimeDirective());
+  /// ```
+  static void directive(String name, ViewDirective directive) {
+    engine.directive(name, directive);
   }
 
   /// add a variable or function that every template can use
@@ -98,6 +111,7 @@ class View {
   static ViewEngine _make(
     ViewConfig config, [
     Map<String, Object?> before = const <String, Object?>{},
+    Map<String, ViewDirective> directives = const <String, ViewDirective>{},
   ]) {
     bool cache =
         config.cache ??
@@ -110,6 +124,7 @@ class View {
       cache: cache,
       environment: Env.get<String>('APP_ENV'),
       globals: <String, Object?>{'route': _route, ...before, ...config.globals},
+      directives: <String, ViewDirective>{...directives, ...config.directives},
     );
   }
 }

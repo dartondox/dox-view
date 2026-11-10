@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'expression.dart';
 import 'safe_string.dart';
 import 'scope.dart';
@@ -6,10 +8,13 @@ import 'view_exception.dart';
 
 /// A parsed template.
 class Template {
-  const Template(this.name, this.nodes);
+  const Template(this.name, this.nodes, [this.layout]);
 
   final String name;
   final List<Node> nodes;
+
+  /// the `@extends` of the template, null when it has no layout
+  final ExtendsNode? layout;
 }
 
 /// The state of one render.
@@ -28,6 +33,49 @@ class RenderContext {
   /// the `@once` blocks that rendered already
   final Set<String> once = <String>{};
 
+  /// the content of each `@section`, by name
+  final Map<String, String> sections = <String, String>{};
+
+  /// the content of each `@push`, by the name of the stack
+  final Map<String, List<String>> stacks = <String, List<String>>{};
+
+  /// the names of the stacks with a `@stack` in the output
+  final Set<String> _stackNames = <String>{};
+
+  static final Random _random = Random();
+
+  /// the start of the mark that `@stack` leaves in the output. It has a
+  /// random number of this render, so text from the user can not be a mark.
+  late final String _mark = '\u0000stack${_random.nextInt(0x7fffffff)}:';
+
+  /// the mark of `@stack(name)`. [finish] puts the pushes there, so a
+  /// `@push` that renders after the `@stack` is in it too.
+  String stackMark(String name) {
+    _stackNames.add(name);
+    return '$_mark$name\u0000';
+  }
+
+  /// [html] with every `@stack` filled
+  // ponytail: one pass per stack name. A `@stack` inside a `@push` is not
+  // filled; add a loop here if someone needs it.
+  String finish(String html) {
+    for (String name in _stackNames) {
+      html = html.replaceAll('$_mark$name\u0000', stacks[name]?.join() ?? '');
+    }
+    return html;
+  }
+
+  /// the text of [value] for the output: escaped, but not a `SafeString`
+  String escape(Object? value) =>
+      value is SafeString ? value.value : escapeHtml(stringify(value));
+
+  /// [nodes] as text
+  String capture(List<Node> nodes, Scope scope) {
+    StringBuffer out = StringBuffer();
+    renderNodes(nodes, scope, out);
+    return out.toString();
+  }
+
   /// [expr], with the template and [line] in any error
   Object? eval(Expr expr, Scope scope, int line) {
     try {
@@ -45,7 +93,7 @@ class RenderContext {
     if (_depth >= 100) {
       throw ViewException(
         'too many nested templates at "$name". '
-        'Does a template include itself?',
+        'Does a template include or extend itself?',
         template: template,
         line: line,
       );
@@ -61,7 +109,29 @@ class RenderContext {
     template = name;
     _depth++;
     try {
-      renderNodes(found.nodes, scope, out);
+      ExtendsNode? layout = found.layout;
+      if (layout == null) {
+        renderNodes(found.nodes, scope, out);
+      } else {
+        // the template fills its sections first. Its text outside a
+        // section is dropped. Then the layout prints the sections.
+        // ponytail: the dropped text is still rendered into a buffer
+        capture(found.nodes, scope);
+        Object? parentName = eval(layout.name, scope, layout.line);
+        if (parentName is! String) {
+          throw ViewException(
+            '@extends needs a template name',
+            template: name,
+            line: layout.line,
+          );
+        }
+        renderTemplate(
+          parentName,
+          Scope(<String, Object?>{}, scope),
+          out,
+          layout.line,
+        );
+      }
     } finally {
       template = parent;
       _depth--;
@@ -104,11 +174,7 @@ class OutputNode extends Node {
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     Object? value = ctx.eval(expr, scope, line);
-    if (raw || value is SafeString) {
-      out.write(stringify(value));
-    } else {
-      out.write(escapeHtml(stringify(value)));
-    }
+    out.write(raw ? stringify(value) : ctx.escape(value));
   }
 }
 
@@ -376,5 +442,124 @@ class OnceNode extends Node {
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     if (ctx.once.add(key)) ctx.renderNodes(body, scope, out);
+  }
+}
+
+/// `@extends('layouts/app')`: the layout of the template. It prints
+/// nothing: `RenderContext.renderTemplate` renders the layout.
+class ExtendsNode extends Node {
+  const ExtendsNode(this.name, super.line);
+
+  final Expr name;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {}
+}
+
+/// `@section('name') ... @end`, or `@section('name', value)`: content
+/// for the `@yield('name')` of the layout. The first one with a name
+/// wins, so a page wins over its layout.
+class SectionNode extends Node {
+  const SectionNode(this.name, this.body, this.value, super.line);
+
+  final String name;
+  final List<Node> body;
+
+  /// the short form. It is escaped, like `{{ }}`.
+  final Expr? value;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    if (ctx.sections.containsKey(name)) return;
+    Expr? value = this.value;
+    ctx.sections[name] = value == null
+        ? ctx.capture(body, Scope(<String, Object?>{}, scope))
+        : ctx.escape(ctx.eval(value, scope, line));
+  }
+}
+
+/// `@yield('name')` or `@yield('name', fallback)`: prints a section
+class YieldNode extends Node {
+  const YieldNode(this.name, this.fallback, super.line);
+
+  final String name;
+
+  /// printed when there is no such section. It is escaped, like `{{ }}`.
+  final Expr? fallback;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    String? content = ctx.sections[name];
+    Expr? fallback = this.fallback;
+    if (content != null) {
+      out.write(content);
+    } else if (fallback != null) {
+      out.write(ctx.escape(ctx.eval(fallback, scope, line)));
+    }
+  }
+}
+
+/// `@stack('name')`: prints every `@push('name')` of the render
+class StackNode extends Node {
+  const StackNode(this.name, super.line);
+
+  final String name;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    out.write(ctx.stackMark(name));
+  }
+}
+
+/// `@push('name') ... @end` adds to the end of a stack. `@prepend` adds
+/// to the start.
+class PushNode extends Node {
+  const PushNode(this.name, this.body, super.line, {this.prepend = false});
+
+  final String name;
+  final List<Node> body;
+  final bool prepend;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    String content = ctx.capture(body, Scope(<String, Object?>{}, scope));
+    List<String> stack = ctx.stacks[name] ??= <String>[];
+    stack.insert(prepend ? 0 : stack.length, content);
+  }
+}
+
+/// `@csrf`: the hidden `_token` field for `CsrfMiddleware`. The token
+/// is `csrfToken` of the shared data: `view()` sets it with a session.
+class CsrfNode extends Node {
+  const CsrfNode(super.line);
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    // the shared data, so the view data can not change the token
+    Object? token = ctx.shared.lookup('csrfToken');
+    if (token is Function) token = Function.apply(token, const <Object?>[]);
+    if (token is! String || token.isEmpty) {
+      throw ViewException(
+        '@csrf needs a session. Add SessionMiddleware to the route.',
+        template: ctx.template,
+        line: line,
+      );
+    }
+    out.write(
+      '<input type="hidden" name="_token" value="${escapeHtml(token)}">',
+    );
+  }
+}
+
+/// `@method('PUT')`: the hidden `_method` field for `MethodOverride`
+class MethodNode extends Node {
+  const MethodNode(this.method, super.line);
+
+  final Expr method;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    String value = escapeHtml(stringify(ctx.eval(method, scope, line)));
+    out.write('<input type="hidden" name="_method" value="$value">');
   }
 }

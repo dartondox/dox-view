@@ -18,6 +18,7 @@ class ViewRouter extends Router {
       return view(req, 'users/show', <String, dynamic>{'name': '<Ann>'});
     }).name('users.show');
     Route.get('/form', (DoxRequest req) => view(req, 'form'));
+    Route.get('/edit', (DoxRequest req) => view(req, 'edit'));
     Route.post('/form', (DoxRequest req) {
       req.session.flashErrors(<String, String>{
         'email': 'The email is taken',
@@ -52,6 +53,11 @@ class LoggedIn implements IAuth {
   Future<void> verifyToken(IDoxRequest req) async {}
 }
 
+class Upper implements ViewDirective {
+  @override
+  Object? render(List<Object?> args, Scope scope) => '${args[0]}'.toUpperCase();
+}
+
 void main() {
   late DoxTestClient client;
   late Directory dir;
@@ -73,6 +79,12 @@ void main() {
     await File('${dir.path}/form_layout.dox.html').writeAsString(
       '<form method="POST" action="{{ request.path }}">{{ csrfField() }}'
       '{{ \$slots.main }}</form>',
+    );
+    await File('${dir.path}/edit.dox.html').writeAsString(
+      '<form method="POST" action="/form">\n'
+      '@csrf\n'
+      "@method('PUT')\n"
+      '</form>\n',
     );
     await File('${dir.path}/auth.dox.html')
         .writeAsString('@auth\nin\n@else\nout\n@end\n');
@@ -119,6 +131,34 @@ void main() {
     expect(back.body, contains('value="a@b.c"'));
     expect(back.body, contains('The email is taken'));
     expect(back.body, contains('action="/form"'));
+  });
+
+  test('@csrf prints the token of the session, and @method', () async {
+    TestResponse page = await client.get('/edit');
+    expect(
+      page.body,
+      contains('<input type="hidden" name="_method" value="PUT">'),
+    );
+    String token = RegExp(
+      r'<input type="hidden" name="_token" value="([^"]+)">',
+    ).firstMatch(page.body)![1]!;
+
+    TestResponse post = await client
+        .withCookies(page.cookies)
+        .post('/form', body: <String, String>{'_token': token});
+    expect(post.status, 302);
+  });
+
+  test('@csrf with no session is an error', () {
+    expect(() => View.render('edit'), throwsA(isA<ViewException>()));
+  });
+
+  test('View.directive adds a tag, and configure keeps it', () async {
+    await File('${dir.path}/tag.dox.html').writeAsString('@upper(name)');
+    View.directive('upper', Upper());
+    expect(View.render('tag', <String, dynamic>{'name': 'ann'}), 'ANN');
+    View.configure(ViewConfig(path: dir.path, cache: false));
+    expect(View.render('tag', <String, dynamic>{'name': 'ann'}), 'ANN');
   });
 
   test('errors is empty with no session and in View.render', () async {

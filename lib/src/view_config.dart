@@ -1,3 +1,5 @@
+import 'view_directive.dart';
+
 /// The settings of `dox_view`. The path is from the folder where the
 /// app runs (the project root).
 /// ```
@@ -11,6 +13,7 @@ class ViewConfig {
     this.extension = '.dox.html',
     this.cache,
     this.globals = const <String, Object?>{},
+    this.directives = const <String, ViewDirective>{},
   });
 
   /// The folder of the templates.
@@ -27,4 +30,7 @@ class ViewConfig {
 
   /// Variables and functions that every template can use.
   final Map<String, Object?> globals;
+
+  /// The tags of the app, by name: `'datetime'` is `@datetime(...)`.
+  final Map<String, ViewDirective> directives;
 }

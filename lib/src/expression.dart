@@ -1,5 +1,6 @@
 import 'safe_string.dart';
 import 'scope.dart';
+import 'view_directive.dart';
 import 'view_exception.dart';
 
 /// An expression in `{{ }}` or in the `()` of a tag.
@@ -240,6 +241,20 @@ class EnvExpr extends Expr {
     }
     return false;
   }
+}
+
+/// a tag of the app, eg. `@datetime(post.createdAt)`: the text its
+/// [directive] gives for the [args]
+class DirectiveExpr extends Expr {
+  const DirectiveExpr(this.directive, this.args);
+
+  final ViewDirective directive;
+  final List<Expr> args;
+
+  @override
+  Object? evaluate(Scope scope) => directive.render(<Object?>[
+    for (Expr arg in args) arg.evaluate(scope),
+  ], scope);
 }
 
 /// `a ? b : c`

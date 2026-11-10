@@ -24,6 +24,30 @@ class Counter {
   }
 }
 
+class Shout implements ViewDirective {
+  @override
+  Object? render(List<Object?> args, Scope scope) =>
+      '${args[0]}'.toUpperCase() + '!' * (args[1]! as int);
+}
+
+class Bold implements ViewDirective {
+  @override
+  Object? render(List<Object?> args, Scope scope) =>
+      SafeString('<b>${escapeHtml('${args[0]}')}</b>');
+}
+
+/// reads a variable of the template
+class Hello implements ViewDirective {
+  @override
+  Object? render(List<Object?> args, Scope scope) =>
+      'Hello ${scope.lookup('name')}';
+}
+
+class Fail implements ViewDirective {
+  @override
+  Object? render(List<Object?> args, Scope scope) => throw StateError('no');
+}
+
 /// render the template [source] with [data]. [others] are more
 /// templates it can include.
 String render(
@@ -588,6 +612,419 @@ void main() {
       );
       engine.global('twice', (int n) => n * 2);
       expect(engine.render('a'), 'Dox 4');
+    });
+  });
+
+  group('layouts', () {
+    Map<String, String> templates = <String, String>{
+      'layouts/app':
+          "<title>@yield('title', 'My <app>')</title>\n"
+          '<main>\n'
+          "@yield('content')\n"
+          "</main>@yield('nothing')",
+    };
+
+    test('a page fills the sections of its layout', () {
+      expect(
+        render(
+          "@extends('layouts/app')\n"
+          "@section('title', name)\n"
+          "@section('content')\n"
+          '<p>Hi {{ name }}</p>\n'
+          '@end\n',
+          <String, Object?>{'name': '<Ann>'},
+          templates,
+        ),
+        '<title>&lt;Ann&gt;</title>\n'
+        '<main>\n'
+        '<p>Hi &lt;Ann&gt;</p>\n'
+        '</main>',
+      );
+    });
+
+    test('@yield prints its default, escaped', () {
+      expect(
+        render("@extends('layouts/app')", <String, Object?>{}, templates),
+        '<title>My &lt;app&gt;</title>\n<main>\n</main>',
+      );
+    });
+
+    test('text outside a section is dropped, but @let and @push work', () {
+      expect(
+        render(
+          '{{-- a comment can come first --}}\n'
+          "@extends('base')\n"
+          'dropped {{ name }}\n'
+          "@let(greeting = 'Hello')\n"
+          "@push('js')\n"
+          'a.js\n'
+          '@end\n'
+          "@section('content')\n"
+          '{{ greeting }} {{ name }}\n'
+          '@end\n',
+          <String, Object?>{'name': 'Ann'},
+          <String, String>{'base': "[@yield('content')][@stack('js')]"},
+        ),
+        '[Hello Ann\n][a.js\n]',
+      );
+    });
+
+    test('the layout sees the data of the page', () {
+      expect(
+        render(
+          "@extends('base')",
+          <String, Object?>{'name': 'Ann'},
+          <String, String>{'base': 'Hi {{ name }}'},
+        ),
+        'Hi Ann',
+      );
+    });
+
+    test('a layout can extend a layout, and the page wins', () {
+      expect(
+        render(
+          "@extends('admin')\n"
+          "@section('title', 'Users')\n"
+          "@section('page')\n"
+          'list\n'
+          '@end\n',
+          <String, Object?>{},
+          <String, String>{
+            'admin':
+                "@extends('base')\n"
+                "@section('title', 'Admin')\n"
+                "@section('content')\n"
+                "<nav></nav>@yield('page')"
+                '@end\n',
+            'base': "<title>@yield('title')</title>@yield('content')",
+          },
+        ),
+        '<title>Users</title><nav></nav>list\n',
+      );
+    });
+
+    test('the layout name can be an expression', () {
+      expect(
+        render(
+          '@extends(layout)',
+          <String, Object?>{'layout': 'base'},
+          <String, String>{'base': 'base'},
+        ),
+        'base',
+      );
+    });
+
+    test('works with the cache, and renders share nothing', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{
+          'base': "@stack('js')|@yield('title', 'none')",
+          'a': "@extends('base')\n@section('title', 'A')\n@push('js')+@end",
+          'b': "@extends('base')",
+        }),
+      );
+      expect(engine.render('a'), '+|A');
+      expect(engine.render('b'), '|none');
+      expect(engine.render('a'), '+|A');
+    });
+
+    test('@extends must come first, and only once', () {
+      expect(
+        () => render("<p>x</p>\n@extends('base')"),
+        throwsA(
+          isA<ViewException>()
+              .having(
+                (ViewException e) => e.message,
+                'message',
+                '@extends must be the first thing in a template',
+              )
+              .having((ViewException e) => e.line, 'line', 2),
+        ),
+      );
+      expect(
+        () => render("@extends('base')\n@extends('other')"),
+        throwsA(
+          isA<ViewException>().having(
+            (ViewException e) => e.message,
+            'message',
+            'a template can have only one @extends',
+          ),
+        ),
+      );
+    });
+
+    test('a @section with no @end', () {
+      expect(
+        () => render("@extends('base')\n@section('content')\nx"),
+        throwsA(
+          isA<ViewException>()
+              .having(
+                (ViewException e) => e.message,
+                'message',
+                '@section has no @end',
+              )
+              .having((ViewException e) => e.template, 'template', 'main')
+              .having((ViewException e) => e.line, 'line', 2),
+        ),
+      );
+    });
+
+    test('an unknown layout', () {
+      expect(
+        () => render("\n@extends('nope')"),
+        throwsA(
+          isA<ViewException>()
+              .having(
+                (ViewException e) => e.message,
+                'message',
+                'template "nope" not found',
+              )
+              .having((ViewException e) => e.template, 'template', 'main')
+              .having((ViewException e) => e.line, 'line', 2),
+        ),
+      );
+    });
+
+    test('a layout that extends itself', () {
+      expect(
+        () => render("@extends('main')"),
+        throwsA(
+          isA<ViewException>().having(
+            (ViewException e) => e.message,
+            'message',
+            contains('extend itself'),
+          ),
+        ),
+      );
+    });
+
+    test('a section name must be a string', () {
+      expect(() => render('@yield(name)'), throwsA(isA<ViewException>()));
+    });
+  });
+
+  group('stacks', () {
+    test('a @stack before the @push still gets it', () {
+      expect(
+        render(
+          "<head>@stack('js')</head>\n"
+          "@push('js')\n"
+          '<script src="{{ file }}"></script>\n'
+          '@end\n'
+          '<body></body>',
+          <String, Object?>{'file': 'a.js'},
+        ),
+        '<head><script src="a.js"></script>\n</head>\n<body></body>',
+      );
+    });
+
+    test('the page, includes, components and the layout all push', () {
+      expect(
+        render(
+          "@extends('base')\n"
+          "@push('js')page @end\n"
+          "@section('content')\n"
+          "@include('part')\n"
+          '@!card()\n'
+          '@end\n',
+          <String, Object?>{},
+          <String, String>{
+            'base':
+                "[@stack('js')]@yield('content')"
+                "@push('js')layout @end"
+                "@prepend('js')first @end",
+            'part': "@push('js')include @end",
+            'components/card': "@push('js')component @end",
+          },
+        ),
+        '[first page include component layout ]',
+      );
+    });
+
+    test('an empty stack prints nothing, and can show twice', () {
+      expect(
+        render("[@stack('a')][@stack('b')][@stack('b')]@push('b')+@end"),
+        '[][+][+]',
+      );
+    });
+
+    test('@once in a @push pushes once', () {
+      expect(
+        render(
+          "@!item()@!item()[@stack('js')]",
+          <String, Object?>{},
+          <String, String>{
+            'components/item': "@push('js')\n@once\njs\n@end\n@end\n",
+          },
+        ),
+        '[js\n]',
+      );
+    });
+
+    test('a @stack in a slot of a component is filled', () {
+      expect(
+        render(
+          "@box()@stack('js')@end@push('js')+@end",
+          <String, Object?>{},
+          <String, String>{'components/box': '<b>{{ \$slot }}</b>'},
+        ),
+        '<b>+</b>',
+      );
+    });
+  });
+
+  group('@method and @csrf', () {
+    test('@method prints the hidden field, escaped', () {
+      expect(
+        render("@method('PUT') @method(verb)", <String, Object?>{'verb': '">'}),
+        '<input type="hidden" name="_method" value="PUT"> '
+        '<input type="hidden" name="_method" value="&quot;&gt;">',
+      );
+    });
+
+    test('@csrf prints the shared token, escaped', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{'form': '<form>\n@csrf\n'}),
+      );
+      expect(
+        engine.render(
+          'form',
+          <String, Object?>{'csrfToken': 'from the page data'},
+          <String, Object?>{'csrfToken': () => 'a"b'},
+        ),
+        '<form>\n<input type="hidden" name="_token" value="a&quot;b">',
+      );
+    });
+
+    test('@csrf with no token is an error', () {
+      expect(
+        () => render('<form>\n@csrf\n</form>'),
+        throwsA(
+          isA<ViewException>()
+              .having(
+                (ViewException e) => e.message,
+                'message',
+                contains('@csrf needs a session'),
+              )
+              .having((ViewException e) => e.line, 'line', 2),
+        ),
+      );
+    });
+  });
+
+  group('custom directives', () {
+    ViewEngine engine() => ViewEngine(
+      const MemoryTemplateLoader(<String, String>{
+        'main': '@shout(name, 2) @!bold() @hello()',
+        'text': '@shout and @shout (see the docs)',
+        'bad': '\n@fail(1)',
+        'components/bold': 'component',
+      }),
+      directives: <String, ViewDirective>{'shout': Shout()},
+    );
+
+    test('print escaped text, or HTML with SafeString', () {
+      ViewEngine views = engine()
+        ..directive('bold', Bold())
+        ..directive('hello', Hello());
+      expect(
+        views.render('main', <String, Object?>{'name': '<ann>'}),
+        '&lt;ANN&gt;!! component Hello &lt;ann&gt;',
+      );
+      views = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{'main': '@bold(name)'}),
+      )..directive('bold', Bold());
+      expect(
+        views.render('main', <String, Object?>{'name': '<ann>'}),
+        '<b>&lt;ann&gt;</b>',
+      );
+    });
+
+    test('with no ( ), or with args that do not parse, it stays text', () {
+      expect(engine().render('text'), '@shout and @shout (see the docs)');
+    });
+
+    test('a directive added after a render works in cached templates', () {
+      ViewEngine views = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{'main': '@hello()'}),
+      );
+      expect(views.render('main'), '@hello()');
+      views.directive('hello', Hello());
+      expect(
+        views.render('main', <String, Object?>{'name': 'Ann'}),
+        'Hello Ann',
+      );
+    });
+
+    test('a built-in name or a bad name throws', () {
+      for (String name in <String>['if', 'end', 'section', 'csrf', 'class']) {
+        expect(
+          () => engine().directive(name, Shout()),
+          throwsA(
+            isA<ViewException>().having(
+              (ViewException e) => e.message,
+              'message',
+              contains('@$name is a built-in tag'),
+            ),
+          ),
+        );
+      }
+      expect(
+        () => engine().directive('my-tag', Shout()),
+        throwsA(isA<ViewException>()),
+      );
+    });
+
+    test('an error in a directive names the template and the line', () {
+      ViewEngine views = engine()..directive('fail', Fail());
+      expect(
+        () => views.render('bad'),
+        throwsA(
+          isA<ViewException>()
+              .having((ViewException e) => e.message, 'message', contains('no'))
+              .having((ViewException e) => e.template, 'template', 'bad')
+              .having((ViewException e) => e.line, 'line', 2),
+        ),
+      );
+    });
+  });
+
+  group('old templates', () {
+    test('the new tag names stay text with no ( )', () {
+      String text =
+          'The @section and @yield of @extends, a @stack to @push or '
+          '@prepend, send @csrf with @method. @csrf';
+      expect(render(text), text);
+    });
+
+    test('with a space before (, text that is not a tag stays text', () {
+      String text =
+          'A @section (see below) and a @push (to the stack) or '
+          "@yield ('a', 'b', 'c') and @method (GET or POST).";
+      expect(render(text), text);
+    });
+
+    test('a component with the name of a new tag still wins', () {
+      expect(
+        render(
+          "@stack({ gap: 2 })x @end @!section({ id: 'a' })",
+          <String, Object?>{},
+          <String, String>{
+            'components/stack': '<div gap="{{ gap }}">{{ \$slot }}</div>',
+            'components/section': '<section id="{{ id }}">',
+          },
+        ),
+        '<div gap="2">x </div> <section id="a">',
+      );
+    });
+
+    test('a page with no new tag prints the same', () {
+      expect(
+        render(
+          '@if(on)\n<a href="mailto:me@mail.com">@media</a>\n@end\n',
+          <String, Object?>{'on': true},
+        ),
+        '<a href="mailto:me@mail.com">@media</a>\n',
+      );
     });
   });
 

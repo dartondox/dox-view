@@ -1,6 +1,7 @@
 import 'expression.dart';
 import 'lexer.dart';
 import 'nodes.dart';
+import 'view_directive.dart';
 import 'view_engine.dart';
 import 'view_exception.dart';
 
@@ -33,16 +34,35 @@ const Set<String> _argDirectives = <String>{
   'checked',
   'selected',
   'disabled',
+  'extends',
+  'section',
+  'yield',
+  'stack',
+  'push',
+  'prepend',
+  'method',
 };
 
+/// the ones of [_argDirectives] that can take two arguments
+const Set<String> _twoArgDirectives = <String>{'section', 'yield'};
+
 /// the ones of [_argDirectives] with a body and an `@end`
-const Set<String> _endDirectives = <String>{'isset', 'empty', 'env'};
+/// `@section` has no body with two arguments: see [TemplateParser._hasBody].
+const Set<String> _endDirectives = <String>{
+  'isset',
+  'empty',
+  'env',
+  'section',
+  'push',
+  'prepend',
+};
 const Set<String> _blockDirectives = <String>{
   'auth',
   'guest',
   'production',
   'verbatim',
   'once',
+  'csrf',
 };
 
 final RegExp _eachHeader = RegExp(
@@ -67,7 +87,20 @@ class TemplateParser {
   /// the number of `@once` tags so far: each one has its own key
   int _once = 0;
 
-  List<Node> parse() => _body(const <String>{}, null).$1;
+  /// the `@extends` of the template
+  ExtendsNode? _layout;
+
+  /// true for the name of a tag of the engine. A directive of the app
+  /// can not use it.
+  static bool isBuiltIn(String name) =>
+      _tags.contains(name) ||
+      _argDirectives.contains(name) ||
+      _blockDirectives.contains(name);
+
+  Template parse() {
+    List<Node> nodes = _body(const <String>{}, null).$1;
+    return Template(name, nodes, _layout);
+  }
 
   /// nodes up to one of the tags in [stops]. Gives the nodes and the
   /// stop tag.
@@ -104,20 +137,37 @@ class TemplateParser {
   bool _isTag(Token token, int index) {
     if (_tags.contains(token.name)) return true;
     if (_blockDirectives.contains(token.name)) return token.standalone;
-    if (!_argDirectives.contains(token.name) || token.args == null) {
-      return false;
-    }
+    bool custom = engine.directiveFor(token.name) != null;
+    if (!custom && !_argDirectives.contains(token.name)) return false;
+    if (token.args == null) return false;
     // text like `@empty (none)` or `@class (see docs)`: with a space
     // before `(`, in the middle of a line, it is a tag only when its args
-    // parse. `@isset`, `@empty` and `@env` also need an `@end` after them.
+    // parse. A tag with a body, like `@isset` or `@push`, also needs an
+    // `@end` after it.
     if (token.standalone || !_spaceBeforeArgs(token)) return true;
-    try {
-      if (ExprParser(token.args!).parseList().length != 1) return false;
-    } on ViewException {
+    int? count = _argCount(token);
+    if (count == null) return false;
+    if (custom) return true;
+    if (count != 1 && !(count == 2 && _twoArgDirectives.contains(token.name))) {
       return false;
     }
-    return !_endDirectives.contains(token.name) || _hasEnd(index + 1);
+    return !_hasBody(token) || _hasEnd(index + 1);
   }
+
+  /// the number of args of [token], null when they do not parse
+  int? _argCount(Token token) {
+    try {
+      return ExprParser(token.args ?? '').parseList().length;
+    } on ViewException {
+      return null;
+    }
+  }
+
+  /// true for a directive that has a body and an `@end`.
+  /// `@section('title', 'Home')` has no body.
+  bool _hasBody(Token token) =>
+      _endDirectives.contains(token.name) &&
+      !(token.name == 'section' && _argCount(token) == 2);
 
   /// true when an `@end` after [from] closes the block that starts just
   /// before it. The blocks in between are counted.
@@ -143,10 +193,13 @@ class TemplateParser {
   bool _opensBlock(Token token, int index) {
     if (_component(token) != null) return !token.selfClosing;
     if (!_isTag(token, index)) return false;
+    if (engine.directiveFor(token.name) != null) return false;
     return switch (token.name) {
       'else' || 'elseif' || 'include' || 'includeIf' => false,
       'let' || 'assign' || 'class' || 'checked' => false,
       'selected' || 'disabled' => false,
+      'extends' || 'yield' || 'stack' || 'method' || 'csrf' => false,
+      'section' => _hasBody(token),
       'component' => !token.selfClosing,
       _ => true,
     };
@@ -167,7 +220,46 @@ class TemplateParser {
         args.isEmpty ? null : args[0],
       );
     }
+    ViewDirective? directive = engine.directiveFor(token.name);
+    if (directive != null) {
+      Expr call = DirectiveExpr(directive, _args(token, 0, 1 << 30));
+      return OutputNode(call, token.line);
+    }
     switch (token.name) {
+      case 'extends':
+        return _extends(token);
+      case 'section':
+        List<Expr> args = _args(token, 1, 2);
+        String section = _name(token, args[0]);
+        if (args.length == 2) {
+          return SectionNode(section, const <Node>[], args[1], token.line);
+        }
+        List<Node> body = _body(const <String>{'end'}, token).$1;
+        return SectionNode(section, body, null, token.line);
+      case 'yield':
+        List<Expr> args = _args(token, 1, 2);
+        return YieldNode(
+          _name(token, args[0]),
+          args.length > 1 ? args[1] : null,
+          token.line,
+        );
+      case 'stack':
+        return StackNode(_name(token, _args(token, 1)[0]), token.line);
+      case 'push':
+      case 'prepend':
+        String stack = _name(token, _args(token, 1)[0]);
+        List<Node> body = _body(const <String>{'end'}, token).$1;
+        return PushNode(
+          stack,
+          body,
+          token.line,
+          prepend: token.name == 'prepend',
+        );
+      case 'csrf':
+        if (token.args != null) throw _error('@csrf takes no arguments', token);
+        return CsrfNode(token.line);
+      case 'method':
+        return MethodNode(_args(token, 1)[0], token.line);
       case 'if':
         return _if(token, _expr(_rawArgs(token), token));
       case 'unless':
@@ -310,12 +402,35 @@ class TemplateParser {
   }
 
   Node _slot(Token token) {
-    Expr name = _args(token, 1)[0];
-    if (name is! LiteralExpr || name.value is! String) {
-      throw _error("the slot name must be a string, eg. @slot('title')", token);
-    }
+    String name = _name(token, _args(token, 1)[0]);
     List<Node> body = _body(const <String>{'end'}, token).$1;
-    return SlotNode(name.value! as String, body, token.line);
+    return SlotNode(name, body, token.line);
+  }
+
+  /// the name of a slot, a section or a stack: it must be a string
+  String _name(Token token, Expr name) {
+    if (name is! LiteralExpr || name.value is! String) {
+      throw _error(
+        'the ${token.name} name must be a string, '
+        "eg. @${token.name}('title')",
+        token,
+      );
+    }
+    return name.value! as String;
+  }
+
+  /// `@extends('layouts/app')`: once, before any other content
+  Node _extends(Token token) {
+    if (_layout != null) {
+      throw _error('a template can have only one @extends', token);
+    }
+    for (int i = 0; i < _pos - 1; i++) {
+      Token before = _tokens[i];
+      if (before.kind != TokenKind.text || before.value.trim().isNotEmpty) {
+        throw _error('@extends must be the first thing in a template', token);
+      }
+    }
+    return _layout = ExtendsNode(_args(token, 1)[0], token.line);
   }
 
   /// the template path of a component tag like `@button(...)` or

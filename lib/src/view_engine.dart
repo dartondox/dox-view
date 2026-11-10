@@ -5,6 +5,7 @@ import 'nodes.dart';
 import 'scope.dart';
 import 'template_loader.dart';
 import 'template_parser.dart';
+import 'view_directive.dart';
 import 'view_exception.dart';
 
 /// Parses and renders templates. Use `View` in a Dox app; use this
@@ -21,8 +22,13 @@ class ViewEngine {
     this.cache = true,
     Map<String, Object?> globals = const <String, Object?>{},
     String? environment,
+    Map<String, ViewDirective> directives = const <String, ViewDirective>{},
   }) : globals = Scope(<String, Object?>{...globals}),
-       environment = environment ?? Platform.environment['APP_ENV'] ?? '';
+       environment = environment ?? Platform.environment['APP_ENV'] ?? '' {
+    for (MapEntry<String, ViewDirective> entry in directives.entries) {
+      directive(entry.key, entry.value);
+    }
+  }
 
   final TemplateLoader loader;
 
@@ -39,6 +45,34 @@ class ViewEngine {
 
   final Map<String, Template> _templates = <String, Template>{};
   final Map<String, bool> _exists = <String, bool>{};
+  final Map<String, ViewDirective> _directives = <String, ViewDirective>{};
+
+  static final RegExp _directiveName = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*$');
+
+  /// the tags of the app, by name
+  Map<String, ViewDirective> get directives =>
+      Map<String, ViewDirective>.unmodifiable(_directives);
+
+  /// add the tag `@name(...)`. It prints what [directive] gives.
+  /// A name of a built-in tag, like `if`, throws a [ViewException].
+  void directive(String name, ViewDirective directive) {
+    if (!_directiveName.hasMatch(name)) {
+      throw ViewException(
+        'bad directive name "$name". Use letters, digits and _ only.',
+      );
+    }
+    if (TemplateParser.isBuiltIn(name)) {
+      throw ViewException(
+        '@$name is a built-in tag. Use another name for the directive.',
+      );
+    }
+    _directives[name] = directive;
+    // a template parsed before has `@name(...)` as plain text
+    _templates.clear();
+  }
+
+  /// the directive of the tag [name], null when there is none
+  ViewDirective? directiveFor(String name) => _directives[name];
 
   /// add a variable or function that every template can use
   void global(String name, Object? value) {
@@ -58,8 +92,9 @@ class ViewEngine {
     // render inside a render
     Expando<Map<Object?, Object?>>? outer = jsonCache;
     jsonCache = Expando<Map<Object?, Object?>>();
+    RenderContext ctx = RenderContext(this, sharedScope);
     try {
-      RenderContext(this, sharedScope).renderTemplate(
+      ctx.renderTemplate(
         name,
         Scope(<String, Object?>{...data}, sharedScope),
         out,
@@ -68,7 +103,7 @@ class ViewEngine {
     } finally {
       jsonCache = outer;
     }
-    return out.toString();
+    return ctx.finish(out.toString());
   }
 
   /// the parsed template [name]
@@ -77,7 +112,7 @@ class ViewEngine {
     if (found != null) return found;
     String? source = loader.load(name);
     if (source == null) throw ViewException('template "$name" not found');
-    found = Template(name, TemplateParser(name, source, this).parse());
+    found = TemplateParser(name, source, this).parse();
     if (cache) _templates[name] = found;
     return found;
   }
