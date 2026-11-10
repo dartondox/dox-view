@@ -418,6 +418,47 @@ void main() {
       );
     });
 
+    test(
+      '@empty (none) alone on its line, with no @end of its own, is text',
+      () {
+        expect(render('@empty (none)\n'), '@empty (none)\n');
+        expect(
+          render('Items:\n@isset (see below)\n'),
+          'Items:\n@isset (see below)\n',
+        );
+        // the @end of the block around it is not its own
+        Map<String, Object?> data = <String, Object?>{
+          'items': <int>[1],
+        };
+        expect(
+          render('@each(i in items)\n{{ i }}\n@empty (none)\n@end\n', data),
+          '1\n@empty (none)\n',
+        );
+        expect(render('@if(true)\n@empty (x)\nnone\n@end\n@end\n'), 'none\n');
+        // a tag in the middle of a line also skips the @end around it
+        expect(
+          render('@if(true)\na @empty (none) b\n@end\n'),
+          'a @empty (none) b\n',
+        );
+      },
+    );
+
+    test('many nested tags with a space before ( parse fast', () {
+      // each tag used to scan all the tags after it, again for each
+      // tag inside it: 2 more levels took 4 times as long. 24 levels
+      // took about 6 seconds, and now take a few milliseconds. The
+      // parse does not wait, so a test timeout can not stop it: keep
+      // the level count low enough for the old code to end.
+      int levels = 24;
+      String source = 'a ${'@isset (x) ' * levels}y${' @end' * levels} b';
+      Stopwatch watch = Stopwatch()..start();
+      expect(
+        render(source, <String, Object?>{'x': 1}),
+        'a ${' ' * levels}y${' ' * levels} b',
+      );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+    });
+
     test('spaces after the last tag at the end of the file are removed', () {
       expect(render('@if(true)\nyes\n@end   '), 'yes\n');
       expect(render('@if(true)\nyes\n@end  \n'), 'yes\n');
