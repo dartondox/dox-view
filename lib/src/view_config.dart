@@ -14,6 +14,10 @@ class ViewConfig {
     this.cache,
     this.globals = const <String, Object?>{},
     this.directives = const <String, ViewDirective>{},
+    this.bladeWarnings = true,
+    this.bladeOutput = false,
+    this.strictVariables = false,
+    this.stringZeroIsFalse = false,
   });
 
   /// The folder of the templates.
@@ -33,4 +37,23 @@ class ViewConfig {
 
   /// The tags of the app, by name: `'datetime'` is `@datetime(...)`.
   final Map<String, ViewDirective> directives;
+
+  /// Write a warning to `stderr` when a template has a Blade name that
+  /// is not a Dox tag, like `@foreach`, `@endif` or `{!! !!}`. The
+  /// output of the template does not change.
+  final bool bladeWarnings;
+
+  /// Print `true` as `1`, `false` as nothing, and a whole number like
+  /// `10.0` as `10`. When false, they print as `true`, `false` and
+  /// `10.0`.
+  final bool bladeOutput;
+
+  /// A variable that does not exist throws a `ViewException`. When
+  /// false, it prints nothing. `@isset(x)`, `x ?? 'default'` and
+  /// `x?.name` never throw.
+  final bool strictVariables;
+
+  /// The text `'0'` is false in `@if` and the other conditions. When
+  /// false, only empty text is false.
+  final bool stringZeroIsFalse;
 }

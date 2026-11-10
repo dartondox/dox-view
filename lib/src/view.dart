@@ -125,6 +125,10 @@ class View {
       environment: Env.get<String>('APP_ENV'),
       globals: <String, Object?>{'route': _route, ...before, ...config.globals},
       directives: <String, ViewDirective>{...directives, ...config.directives},
+      bladeWarnings: config.bladeWarnings,
+      bladeOutput: config.bladeOutput,
+      strictVariables: config.strictVariables,
+      stringZeroIsFalse: config.stringZeroIsFalse,
     );
   }
 }

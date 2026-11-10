@@ -8,6 +8,10 @@ abstract class Expr {
   const Expr();
 
   Object? evaluate(Scope scope);
+
+  /// the value for the left side of `??` and `?.`: a variable that does
+  /// not exist is null here, also with strict variables
+  Object? evaluateOptional(Scope scope) => evaluate(scope);
 }
 
 class LiteralExpr extends Expr {
@@ -48,7 +52,16 @@ class VariableExpr extends Expr {
   final String name;
 
   @override
-  Object? evaluate(Scope scope) => scope.lookup(name);
+  Object? evaluate(Scope scope) {
+    Object? value = scope.lookup(name);
+    if (value == null && scope.strictVariables && !scope.has(name)) {
+      throw ViewException('the variable "$name" is not defined');
+    }
+    return value;
+  }
+
+  @override
+  Object? evaluateOptional(Scope scope) => scope.lookup(name);
 }
 
 /// `a.b` or `a?.b`
@@ -61,9 +74,9 @@ class MemberExpr extends Expr {
 
   @override
   Object? evaluate(Scope scope) {
-    Object? target = object.evaluate(scope);
-    if (target == null && optional) return null;
-    return readProperty(target, name);
+    if (!optional) return readProperty(object.evaluate(scope), name);
+    Object? target = object.evaluateOptional(scope);
+    return target == null ? null : readProperty(target, name);
   }
 }
 
@@ -97,7 +110,9 @@ class CallExpr extends Expr {
   Object? evaluate(Scope scope) {
     Expr callee = this.callee;
     if (callee is MemberExpr) {
-      Object? target = callee.object.evaluate(scope);
+      Object? target = callee.optional
+          ? callee.object.evaluateOptional(scope)
+          : callee.object.evaluate(scope);
       if (target == null && callee.optional) return null;
       return callMethod(target, callee.name, _args(scope));
     }
@@ -122,7 +137,7 @@ class UnaryExpr extends Expr {
   @override
   Object? evaluate(Scope scope) {
     Object? value = operand.evaluate(scope);
-    if (op == '!') return !truthy(value);
+    if (op == '!') return !truthy(value, scope.stringZeroIsFalse);
     if (value is num) return -value;
     throw ViewException('can not use - on ${_type(value)}');
   }
@@ -137,14 +152,15 @@ class BinaryExpr extends Expr {
 
   @override
   Object? evaluate(Scope scope) {
+    if (op == '??') {
+      return left.evaluateOptional(scope) ?? right.evaluate(scope);
+    }
     Object? a = left.evaluate(scope);
     switch (op) {
       case '&&':
-        return truthy(a) ? right.evaluate(scope) : a;
+        return truthy(a, scope.stringZeroIsFalse) ? right.evaluate(scope) : a;
       case '||':
-        return truthy(a) ? a : right.evaluate(scope);
-      case '??':
-        return a ?? right.evaluate(scope);
+        return truthy(a, scope.stringZeroIsFalse) ? a : right.evaluate(scope);
     }
     Object? b = right.evaluate(scope);
     switch (op) {
@@ -181,6 +197,12 @@ class BinaryExpr extends Expr {
       _ => a ~/ b,
     };
   }
+
+  /// in `a ?? b ?? c`, `b` can be a variable that does not exist too
+  @override
+  Object? evaluateOptional(Scope scope) => op == '??'
+      ? left.evaluateOptional(scope) ?? right.evaluateOptional(scope)
+      : evaluate(scope);
 }
 
 /// `@isset(a.b)`: true when [expr] is not null. A field of null is
@@ -266,18 +288,20 @@ class ConditionalExpr extends Expr {
   final Expr otherwise;
 
   @override
-  Object? evaluate(Scope scope) => truthy(condition.evaluate(scope))
+  Object? evaluate(Scope scope) =>
+      truthy(condition.evaluate(scope), scope.stringZeroIsFalse)
       ? then.evaluate(scope)
       : otherwise.evaluate(scope);
 }
 
-/// false for null, false, 0, '' and an empty list or map
-bool truthy(Object? value) => switch (value) {
+/// false for null, false, 0, '' and an empty list or map. With
+/// [zeroIsFalse], the text `'0'` is false too.
+bool truthy(Object? value, [bool zeroIsFalse = false]) => switch (value) {
   null => false,
   bool value => value,
   num value => value != 0,
-  String value => value.isNotEmpty,
-  SafeString value => value.value.isNotEmpty,
+  String value => value.isNotEmpty && !(zeroIsFalse && value == '0'),
+  SafeString value => truthy(value.value, zeroIsFalse),
   Iterable<Object?> value => value.isNotEmpty,
   Map<Object?, Object?> value => value.isNotEmpty,
   _ => true,

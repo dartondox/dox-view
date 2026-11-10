@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:math';
 
 import 'expression.dart';
@@ -77,7 +78,20 @@ class RenderContext {
 
   /// the text of [value] for the output: escaped, but not a `SafeString`
   String escape(Object? value) =>
-      value is SafeString ? value.value : escapeHtml(stringify(value));
+      value is SafeString ? value.value : escapeHtml(text(value));
+
+  /// the text of [value] for the output, not escaped. With
+  /// `bladeOutput`, `true` is `1`, `false` is empty and `10.0` is `10`.
+  String text(Object? value) {
+    if (engine.bladeOutput) {
+      if (value is bool) return value ? '1' : '';
+      if (value is double) {
+        String text = value.toString();
+        return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
+      }
+    }
+    return stringify(value);
+  }
 
   /// [nodes] as text
   String capture(List<Node> nodes, Scope scope) {
@@ -184,7 +198,7 @@ class OutputNode extends Node {
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     Object? value = ctx.eval(expr, scope, line);
-    out.write(raw ? stringify(value) : ctx.escape(value));
+    out.write(raw ? ctx.text(value) : ctx.escape(value));
   }
 }
 
@@ -198,7 +212,7 @@ class IfNode extends Node {
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     for ((Expr, List<Node>) branch in branches) {
-      if (truthy(ctx.eval(branch.$1, scope, line))) {
+      if (truthy(ctx.eval(branch.$1, scope, line), scope.stringZeroIsFalse)) {
         ctx.renderNodes(branch.$2, scope, out);
         return;
       }
@@ -248,35 +262,88 @@ class EachNode extends Node {
       ctx.renderNodes(otherwise, scope, out);
       return;
     }
+    Object? outer = scope.lookup(r'$loop');
+    Loop? parent = outer is Loop ? outer : null;
     for (int i = 0; i < entries.length; i++) {
       (Object?, Object?) entry = entries[i];
       Scope inner = Scope(<String, Object?>{
         item: entry.$1,
         ?key: entry.$2 ?? i,
-        r'$loop': <String, Object?>{
-          'index': i,
-          'first': i == 0,
-          'last': i == entries.length - 1,
-          'length': entries.length,
-        },
+        r'$loop': Loop(i, entries.length, parent),
       }, scope);
       ctx.renderNodes(body, inner, out);
     }
   }
 }
 
-/// `@include('name')` and `@includeIf(condition, 'name')`. The template
-/// sees the variables of the template that includes it.
+/// `$loop` in `@each`: a map that works out its values when they are
+/// read, so a round of the loop builds no map.
+class Loop extends UnmodifiableMapBase<String, Object?> {
+  Loop(this.index, this.count, this.parent) : depth = (parent?.depth ?? 0) + 1;
+
+  /// the round, from 0
+  final int index;
+
+  /// the number of rounds
+  final int count;
+
+  /// the `$loop` of the loop around this one, null for the outer loop
+  final Loop? parent;
+
+  /// 1 for the outer loop, 2 for a loop inside it
+  final int depth;
+
+  static const List<String> _keys = <String>[
+    'index',
+    'first',
+    'last',
+    'length',
+    'iteration',
+    'count',
+    'remaining',
+    'even',
+    'odd',
+    'depth',
+    'parent',
+  ];
+
+  @override
+  Iterable<String> get keys => _keys;
+
+  @override
+  Object? operator [](Object? key) => switch (key) {
+    'index' => index,
+    'first' => index == 0,
+    'last' => index == count - 1,
+    'length' || 'count' => count,
+    'iteration' => index + 1,
+    'remaining' => count - index - 1,
+    // by `iteration`: the first round is odd
+    'even' => index.isOdd,
+    'odd' => index.isEven,
+    'depth' => depth,
+    'parent' => parent,
+    _ => null,
+  };
+}
+
+/// `@include('name')`, `@includeIf(condition, 'name')` and
+/// `@includeWhen(condition, 'name')`. The template sees the variables of
+/// the template that includes it, and the [data] on top of them.
 class IncludeNode extends Node {
-  const IncludeNode(this.name, this.condition, super.line);
+  const IncludeNode(this.name, this.condition, this.data, super.line);
 
   final Expr name;
   final Expr? condition;
 
+  /// `@include('name', { title: 'Hi' })`: more variables for the template
+  final Expr? data;
+
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     Expr? condition = this.condition;
-    if (condition != null && !truthy(ctx.eval(condition, scope, line))) {
+    if (condition != null &&
+        !truthy(ctx.eval(condition, scope, line), scope.stringZeroIsFalse)) {
       return;
     }
     Object? template = ctx.eval(name, scope, line);
@@ -287,7 +354,87 @@ class IncludeNode extends Node {
         line: line,
       );
     }
-    ctx.renderTemplate(template, Scope(<String, Object?>{}, scope), out, line);
+    Map<String, Object?> vars = <String, Object?>{};
+    Expr? data = this.data;
+    if (data != null) {
+      Object? extra = ctx.eval(data, scope, line);
+      if (extra is! Map<Object?, Object?>) {
+        throw ViewException(
+          'the data of @include must be a map, eg. '
+          "@include('name', { title: 'Home' })",
+          template: ctx.template,
+          line: line,
+        );
+      }
+      for (MapEntry<Object?, Object?> entry in extra.entries) {
+        vars['${entry.key}'] = entry.value;
+      }
+    }
+    ctx.renderTemplate(template, Scope(vars, scope), out, line);
+  }
+}
+
+/// `@json(value)`: the value as JSON, see [SafeString.json]
+class JsonNode extends Node {
+  const JsonNode(this.expr, super.line);
+
+  final Expr expr;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    Object? value = ctx.eval(expr, scope, line);
+    try {
+      out.write(SafeString.json(value).value);
+    } on ViewException catch (error) {
+      throw ViewException(
+        '@json ${error.message}',
+        template: ctx.template,
+        line: line,
+      );
+    }
+  }
+}
+
+/// `@error('email') ... @end`: the body shows when `errors` has a
+/// message for the field. Inside it, `message` is the first message.
+class ErrorNode extends Node {
+  const ErrorNode(this.field, this.body, this.otherwise, super.line);
+
+  final Expr field;
+  final List<Node> body;
+  final List<Node> otherwise;
+
+  @override
+  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+    String name = stringify(ctx.eval(field, scope, line));
+    String? message = _message(_find(scope.lookup('errors'), name));
+    if (message == null) {
+      ctx.renderNodes(otherwise, scope, out);
+      return;
+    }
+    Scope inner = Scope(<String, Object?>{'message': message}, scope);
+    ctx.renderNodes(body, inner, out);
+  }
+
+  /// the errors of [name]: the key `user.email` first, as the validator
+  /// gives it, then `email` inside `user`
+  static Object? _find(Object? errors, String name) {
+    if (errors is! Map<Object?, Object?>) return null;
+    if (errors.containsKey(name)) return errors[name];
+    Object? at = errors;
+    for (String part in name.split('.')) {
+      if (at is! Map<Object?, Object?>) return null;
+      at = at[part];
+    }
+    return at;
+  }
+
+  /// text is the message. A list gives its first item. Empty text, an
+  /// empty list and any other value are no message.
+  static String? _message(Object? value) {
+    if (value is Iterable<Object?>) value = value.isEmpty ? null : value.first;
+    if (value is SafeString) value = value.value;
+    return value is String && value.isNotEmpty ? value : null;
   }
 }
 
@@ -405,22 +552,22 @@ class ClassNode extends Node {
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     List<String> names = <String>[];
-    _add(names, ctx.eval(expr, scope, line));
+    _add(names, ctx.eval(expr, scope, line), scope.stringZeroIsFalse);
     out.write('class="${escapeHtml(names.join(' '))}"');
   }
 
   /// text, a map of name to condition, or a list of these
-  static void _add(List<String> names, Object? value) {
+  static void _add(List<String> names, Object? value, bool zeroIsFalse) {
     switch (value) {
       case String value:
         if (value.isNotEmpty) names.add(value);
       case Map<Object?, Object?> value:
         for (MapEntry<Object?, Object?> entry in value.entries) {
-          if (truthy(entry.value)) names.add('${entry.key}');
+          if (truthy(entry.value, zeroIsFalse)) names.add('${entry.key}');
         }
       case Iterable<Object?> value:
         for (Object? item in value) {
-          _add(names, item);
+          _add(names, item, zeroIsFalse);
         }
     }
   }
@@ -436,7 +583,9 @@ class AttributeNode extends Node {
 
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
-    if (truthy(ctx.eval(expr, scope, line))) out.write(name);
+    if (truthy(ctx.eval(expr, scope, line), scope.stringZeroIsFalse)) {
+      out.write(name);
+    }
   }
 }
 
@@ -579,7 +728,7 @@ class MethodNode extends Node {
 
   @override
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
-    String value = escapeHtml(stringify(ctx.eval(method, scope, line)));
+    String value = escapeHtml(ctx.text(ctx.eval(method, scope, line)));
     out.write('<input type="hidden" name="_method" value="$value">');
   }
 }

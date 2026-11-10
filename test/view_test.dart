@@ -19,6 +19,7 @@ class ViewRouter extends Router {
     }).name('users.show');
     Route.get('/form', (DoxRequest req) => view(req, 'form'));
     Route.get('/edit', (DoxRequest req) => view(req, 'edit'));
+    Route.get('/field', (DoxRequest req) => view(req, 'field'));
     Route.post('/form', (DoxRequest req) {
       req.session.flashErrors(<String, String>{
         'email': 'The email is taken',
@@ -86,6 +87,9 @@ void main() {
       "@method('PUT')\n"
       '</form>\n',
     );
+    await File('${dir.path}/field.dox.html').writeAsString(
+      "@error('email')\n<p>{{ message }}</p>\n@else\nfine\n@end\n",
+    );
     await File('${dir.path}/auth.dox.html')
         .writeAsString('@auth\nin\n@else\nout\n@end\n');
     await File('${dir.path}/errors.dox.html')
@@ -147,6 +151,47 @@ void main() {
         .withCookies(page.cookies)
         .post('/form', body: <String, String>{'_token': token});
     expect(post.status, 302);
+  });
+
+  test('@error shows the flashed error of the field', () async {
+    TestResponse page = await client.get('/form');
+    String token = RegExp(r'name="_token" value="([^"]+)"')
+        .firstMatch(page.body)![1]!;
+    TestResponse post = await client
+        .withCookies(page.cookies)
+        .post('/form', body: <String, String>{'_token': token});
+    TestResponse back = await client
+        .withCookies(<String, String>{...page.cookies, ...post.cookies})
+        .get('/field');
+    expect(back.body, '<p>The email is taken</p>\n');
+    // no errors, and no session at all
+    expect((await client.get('/field')).body, 'fine\n');
+    expect(View.render('field'), 'fine\n');
+  });
+
+  test('ViewConfig gives its options to the engine', () async {
+    await File('${dir.path}/options.dox.html')
+        .writeAsString("{{ on }}|@if('0') zero @end|{{ missing ?? 'none' }}");
+    Map<String, dynamic> data = <String, dynamic>{'on': true};
+    expect(View.render('options', data), 'true| zero |none');
+    expect(View.engine.bladeWarnings, isTrue);
+    View.configure(
+      ViewConfig(
+        path: dir.path,
+        cache: false,
+        bladeWarnings: false,
+        bladeOutput: true,
+        strictVariables: true,
+        stringZeroIsFalse: true,
+      ),
+    );
+    try {
+      expect(View.render('options', data), '1||none');
+      expect(View.engine.bladeWarnings, isFalse);
+      expect(() => View.render('options'), throwsA(isA<ViewException>()));
+    } finally {
+      View.configure(ViewConfig(path: dir.path, cache: false));
+    }
   });
 
   test('@csrf with no session is an error', () {

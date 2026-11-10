@@ -41,6 +41,9 @@ const Set<String> _argDirectives = <String>{
   'push',
   'prepend',
   'method',
+  'includeWhen',
+  'json',
+  'error',
 };
 
 /// the ones of [_argDirectives] that are a tag with a space before `(`
@@ -54,6 +57,51 @@ const Set<String> _quotedDirectives = <String>{
   'push',
   'prepend',
   'method',
+  'error',
+};
+
+/// the ones of [_argDirectives] that are a tag only with the `(` right
+/// after the name. So prose like `the @json (format)` stays text.
+const Set<String> _tightDirectives = <String>{'includeWhen', 'json'};
+
+const String _useEnd = 'Use "@end".';
+
+/// the Blade names that are not Dox tags, and what to write in Dox.
+/// They stay text; the parser only warns.
+const Map<String, String> _bladeNames = <String, String>{
+  'foreach': 'Use "@each(item in items) ... @end".',
+  'forelse': 'Use "@each(item in items) ... @else ... @end".',
+  'for': 'Use "@each(item in items) ... @end".',
+  'while': 'Dox has no "@while". Use "@each(item in items) ... @end".',
+  'switch': 'Use "@if(...) ... @elseif(...) ... @else ... @end".',
+  'php': 'Dox has no "@php". Use "@let(name = value)".',
+  'endphp': 'Dox has no "@php". Use "@let(name = value)".',
+  'show': 'Use "@end", then "@yield(\'name\')" to print the section.',
+  'parent':
+      'Dox has no "@parent". The section of the page replaces the '
+      'section of the layout. Use "@stack" and "@push" to add content.',
+  'endforeach': _useEnd,
+  'endforelse': _useEnd,
+  'endfor': _useEnd,
+  'endwhile': _useEnd,
+  'endswitch': _useEnd,
+  'endif': _useEnd,
+  'endunless': _useEnd,
+  'endisset': _useEnd,
+  'endempty': _useEnd,
+  'endauth': _useEnd,
+  'endguest': _useEnd,
+  'endenv': _useEnd,
+  'endproduction': _useEnd,
+  'endonce': _useEnd,
+  'endverbatim': _useEnd,
+  'endsection': _useEnd,
+  'stop': _useEnd,
+  'endpush': _useEnd,
+  'endprepend': _useEnd,
+  'endcomponent': _useEnd,
+  'endslot': _useEnd,
+  'enderror': _useEnd,
 };
 
 /// the ones of [_argDirectives] that can take two arguments
@@ -68,6 +116,7 @@ const Set<String> _endDirectives = <String>{
   'section',
   'push',
   'prepend',
+  'error',
 };
 const Set<String> _blockDirectives = <String>{
   'auth',
@@ -89,12 +138,17 @@ final RegExp _lineEnd = RegExp(r'[ \t]*$');
 
 /// Turns the tokens of a template into nodes.
 class TemplateParser {
-  TemplateParser(this.name, String source, this.engine)
-    : _tokens = Lexer(source, name).tokenize();
+  TemplateParser(String name, String source, ViewEngine engine)
+    : this._(name, engine, Lexer(source, name));
+
+  TemplateParser._(this.name, this.engine, Lexer lexer)
+    : _tokens = lexer.tokenize(),
+      _bladeRawLines = lexer.bladeRawLines;
 
   final String name;
   final ViewEngine engine;
   final List<Token> _tokens;
+  final List<int> _bladeRawLines;
   int _pos = 0;
 
   /// the number of `@once` tags so far: each one has its own key
@@ -111,6 +165,11 @@ class TemplateParser {
       _blockDirectives.contains(name);
 
   Template parse() {
+    for (int line in _bladeRawLines) {
+      engine.warn(
+        '$name:$line "{!! !!}" is not Dox syntax. Use "{{{ value }}}".',
+      );
+    }
     List<Node> nodes = _body(const <String>{}, null).$1;
     return Template(name, nodes, _layout);
   }
@@ -134,6 +193,7 @@ class TemplateParser {
           String? component = _component(token);
           if (component == null && !_isTag(token, _pos - 1)) {
             // eg. `@media` in CSS
+            _warnBlade(token);
             nodes.add(TextNode(token.value, token.line));
             continue;
           }
@@ -144,6 +204,23 @@ class TemplateParser {
     }
     if (opener != null) throw _error('@${opener.name} has no @end', opener);
     return (nodes, null);
+  }
+
+  /// warn when the text [token] is a Blade name in the place of a tag:
+  /// with `(` right after the name, alone on its line, or an `@end...`
+  /// name. So prose like
+  /// `the @foreach loop` or `ask your @parent (or guardian)` is quiet.
+  /// It warns as soon as it sees the name, so the warning also comes
+  /// before a parse error like `@if has no @end`.
+  void _warnBlade(Token token) {
+    String? hint = _bladeNames[token.name];
+    if (hint == null || token.selfClosing) return;
+    if (engine.directiveFor(token.name) != null) return;
+    bool tight = token.args != null && !_spaceBeforeArgs(token);
+    // `@endif` and the like are not words, so they warn anywhere
+    bool closer = token.name.startsWith('end');
+    if (!tight && !token.standalone && !closer) return;
+    engine.warn('$name:${token.line} "@${token.name}" is not a Dox tag. $hint');
   }
 
   /// [index] is the place of [token] in the tokens
@@ -160,6 +237,7 @@ class TemplateParser {
     // The layout, stack and `@method` tags also need text in quotes as
     // the first arg, on any line: `git @push (force)` stays text.
     if (!_spaceBeforeArgs(token)) return true;
+    if (_tightDirectives.contains(token.name)) return false;
     if (_quotedDirectives.contains(token.name) && !_quotedFirstArg(token)) {
       return false;
     }
@@ -229,6 +307,7 @@ class TemplateParser {
       'let' || 'assign' || 'class' || 'checked' => false,
       'selected' || 'disabled' => false,
       'extends' || 'yield' || 'stack' || 'method' || 'csrf' => false,
+      'includeWhen' || 'json' => false,
       'section' => _hasBody(token),
       'component' => !token.selfClosing,
       _ => true,
@@ -337,11 +416,31 @@ class TemplateParser {
       case 'each':
         return _each(token);
       case 'include':
-        List<Expr> args = _args(token, 1);
-        return IncludeNode(args[0], null, token.line);
+        List<Expr> args = _args(token, 1, 2);
+        return IncludeNode(
+          args[0],
+          null,
+          args.length > 1 ? args[1] : null,
+          token.line,
+        );
       case 'includeIf':
-        List<Expr> args = _args(token, 2);
-        return IncludeNode(args[1], args[0], token.line);
+      case 'includeWhen':
+        List<Expr> args = _args(token, 2, 3);
+        return IncludeNode(
+          args[1],
+          args[0],
+          args.length > 2 ? args[2] : null,
+          token.line,
+        );
+      case 'json':
+        return JsonNode(_args(token, 1)[0], token.line);
+      case 'error':
+        Expr field = _args(token, 1)[0];
+        (List<Node>, Token?) body = _body(const <String>{'else', 'end'}, token);
+        List<Node> otherwise = body.$2!.name == 'else'
+            ? _body(const <String>{'end'}, token).$1
+            : <Node>[];
+        return ErrorNode(field, body.$1, otherwise, token.line);
       case 'component':
         List<Expr> args = _args(token, 1, 2);
         return _componentNode(token, args[0], args.length > 1 ? args[1] : null);

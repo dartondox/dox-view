@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'expression.dart' show jsonCache;
 import 'nodes.dart';
+import 'safe_string.dart';
 import 'scope.dart';
 import 'template_loader.dart';
 import 'template_parser.dart';
@@ -23,7 +24,16 @@ class ViewEngine {
     Map<String, Object?> globals = const <String, Object?>{},
     String? environment,
     Map<String, ViewDirective> directives = const <String, ViewDirective>{},
-  }) : globals = Scope(<String, Object?>{...globals}),
+    this.bladeWarnings = true,
+    this.warningSink,
+    this.bladeOutput = false,
+    bool strictVariables = false,
+    bool stringZeroIsFalse = false,
+  }) : globals = Scope.root(
+         <String, Object?>{'json': SafeString.json, ...globals},
+         strictVariables: strictVariables,
+         stringZeroIsFalse: stringZeroIsFalse,
+       ),
        environment = environment ?? Platform.environment['APP_ENV'] ?? '' {
     for (MapEntry<String, ViewDirective> entry in directives.entries) {
       directive(entry.key, entry.value);
@@ -43,7 +53,25 @@ class ViewEngine {
   /// `APP_ENV`.
   final String environment;
 
+  /// write a warning when a template has a Blade name that is not a
+  /// Dox tag, like `@foreach` or `{!! !!}`
+  final bool bladeWarnings;
+
+  /// where the warnings go. By default it is `stderr`.
+  final StringSink? warningSink;
+
+  /// print `true` as `1`, `false` as nothing, and a number like `10.0`
+  /// as `10`
+  final bool bladeOutput;
+
+  /// a variable that does not exist throws a [ViewException]
+  bool get strictVariables => globals.strictVariables;
+
+  /// the text `'0'` is false in a condition
+  bool get stringZeroIsFalse => globals.stringZeroIsFalse;
+
   final Map<String, Template> _templates = <String, Template>{};
+  final Set<String> _warned = <String>{};
   final Map<String, bool> _exists = <String, bool>{};
   final Map<String, ViewDirective> _directives = <String, ViewDirective>{};
 
@@ -73,6 +101,13 @@ class ViewEngine {
 
   /// the directive of the tag [name], null when there is none
   ViewDirective? directiveFor(String name) => _directives[name];
+
+  /// write the warning [message], one time only. A template that is
+  /// parsed again, with the cache off, does not repeat it.
+  void warn(String message) {
+    if (!bladeWarnings || !_warned.add(message)) return;
+    (warningSink ?? stderr).writeln('dox_view: warning: $message');
+  }
 
   /// add a variable or function that every template can use
   void global(String name, Object? value) {
