@@ -188,6 +188,15 @@ With a space before the `(`, in the middle of a line, a tag is used only when it
 | `@production ... @end` | shows when `APP_ENV` is `production` |
 | `@once ... @end` | shows only the first time in one render, for example a `<script>` in a component |
 | `@verbatim ... @end` | prints the text as it is: no `{{ }}` and no tags run inside it |
+| `@extends('layouts/app')` | the layout of the page. See [Layouts with sections](#layouts-with-sections). |
+| `@section('name') ... @end` | fills a section. Short form: `@section('title', 'Home')`. |
+| `@yield('name')` | prints a section. `@yield('title', 'My app')` has a default. |
+| `@stack('scripts')` | prints every push of the stack. See [Stacks](#stacks). |
+| `@push('scripts') ... @end` | adds to the end of a stack |
+| `@prepend('scripts') ... @end` | adds to the start of a stack |
+| `@csrf` | the hidden `_token` field. See [Forms](#forms). |
+| `@method('PUT')` | the hidden `_method` field |
+| `@datetime(...)` | a tag of your app. See [Your own tags](#your-own-tags). |
 
 ```html
 @auth
@@ -345,6 +354,10 @@ A page can also name its layout with `@extends`. The page fills sections. The la
 - A section sees the variables of the page. The layout sees them too.
 - A layout can extend another layout. When a page and its layout fill the same section, the page wins.
 - The names of sections and stacks must be plain text in quotes, like `'title'`.
+- The first `@section` with a name wins. So a `@section` inside `@each` keeps only the first round.
+- A `@yield('s')` that comes before the `@section('s')` in the same file prints nothing.
+- An `@include` or a component with its own `@extends` prints its layout in place. It shares the section names with the page.
+- A tag right after a letter or a digit, like `L@yield('s')`, stays text.
 
 Use `@extends` for the page layout. Use a component when you need props or more than one copy on a page.
 
@@ -374,7 +387,7 @@ A stack collects HTML from many templates and prints it in one place. Use it for
 - The pushes are printed in the order they run. A page with `@extends` runs before its layout.
 - Put `@once` inside `@push` in a component, so the script is added one time only.
 
-`@extends`, `@section`, `@yield`, `@stack`, `@push`, `@prepend` and `@method` need `( )`. With no `( )`, like `@section` in a sentence, they stay text.
+`@extends`, `@section`, `@yield`, `@stack`, `@push`, `@prepend` and `@method` need `( )`. With no `( )`, like `@section` in a sentence, they stay text. With a space before the `(`, these tags are tags only when the first argument is text in quotes, like `@yield ('title')`. So text like `git @push (force)` or `the @yield (curve)` stays text.
 
 ## Forms
 

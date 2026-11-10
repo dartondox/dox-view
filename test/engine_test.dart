@@ -847,6 +847,37 @@ void main() {
       );
     });
 
+    test('a @stack inside a @push is filled, in both orders', () {
+      Map<String, String> layout = <String, String>{'l': "@stack('a')"};
+      expect(
+        render(
+          "@extends('l')\n"
+          "@push('a') A[@stack('b')] @end\n"
+          "@push('b') B @end\n",
+          <String, Object?>{},
+          layout,
+        ),
+        ' A[ B ] ',
+      );
+      expect(
+        render(
+          "@extends('l')\n"
+          "@push('b') B @end\n"
+          "@push('a') A[@stack('b')] @end\n",
+          <String, Object?>{},
+          layout,
+        ),
+        ' A[ B ] ',
+      );
+    });
+
+    test('a stack that pushes to itself ends, and leaves no mark', () {
+      String html = render("[@stack('a')]@push('a') +@stack('a') @end");
+      expect(html, isNot(contains('\u0000')));
+      expect(html, isNot(contains('stack')));
+      expect(html, startsWith('[ +'));
+    });
+
     test('@once in a @push pushes once', () {
       expect(
         render(
@@ -892,6 +923,28 @@ void main() {
           <String, Object?>{'csrfToken': () => 'a"b'},
         ),
         '<form>\n<input type="hidden" name="_token" value="a&quot;b">',
+      );
+    });
+
+    test('a csrfToken that throws is a ViewException with the line', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{'form': '<form>\n@csrf\n'}),
+        globals: <String, Object?>{
+          'csrfToken': () => throw StateError('no store'),
+        },
+      );
+      expect(
+        () => engine.render('form'),
+        throwsA(
+          isA<ViewException>()
+              .having(
+                (ViewException e) => e.message,
+                'message',
+                contains('no store'),
+              )
+              .having((ViewException e) => e.template, 'template', 'form')
+              .having((ViewException e) => e.line, 'line', 2),
+        ),
       );
     });
 
@@ -1001,6 +1054,31 @@ void main() {
           'A @section (see below) and a @push (to the stack) or '
           "@yield ('a', 'b', 'c') and @method (GET or POST).";
       expect(render(text), text);
+    });
+
+    test('prose with a space before ( and a word in it stays text', () {
+      for (String text in <String>[
+        'call me by @method (preferred) ok',
+        'the @yield (curve) is',
+        'the @stack (overflow) site',
+        'class A @extends (Base) here',
+        '@if(true)\ngit @push (force) now\n@end\n',
+        'git\n@push (force)\nnow',
+        '@extends (Base)\n',
+        'a @section (intro, part) and @prepend (x)',
+      ]) {
+        String expected = text.startsWith('@if')
+            ? 'git @push (force) now\n'
+            : text;
+        expect(render(text), expected, reason: text);
+      }
+    });
+
+    test('with a space before ( and a quoted name, it is a tag', () {
+      expect(
+        render("a @yield ('t', 'x') b @method ('PUT')\n@stack ('js')\n"),
+        'a x b <input type="hidden" name="_method" value="PUT">\n',
+      );
     });
 
     test('a component with the name of a new tag still wins', () {

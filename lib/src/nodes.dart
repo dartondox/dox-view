@@ -42,11 +42,13 @@ class RenderContext {
   /// the names of the stacks with a `@stack` in the output
   final Set<String> _stackNames = <String>{};
 
-  static final Random _random = Random();
+  static final Random _random = Random.secure();
 
   /// the start of the mark that `@stack` leaves in the output. It has a
   /// random number of this render, so text from the user can not be a mark.
-  late final String _mark = '\u0000stack${_random.nextInt(0x7fffffff)}:';
+  late final String _mark =
+      '\u0000stack${_random.nextInt(1 << 32)}'
+      '${_random.nextInt(1 << 32)}${_random.nextInt(1 << 32)}:';
 
   /// the mark of `@stack(name)`. [finish] puts the pushes there, so a
   /// `@push` that renders after the `@stack` is in it too.
@@ -55,14 +57,22 @@ class RenderContext {
     return '$_mark$name\u0000';
   }
 
-  /// [html] with every `@stack` filled
-  // ponytail: one pass per stack name. A `@stack` inside a `@push` is not
-  // filled; add a loop here if someone needs it.
+  /// [html] with every `@stack` filled. A push can have a `@stack` in
+  /// it, so this runs again while a mark is left. A stack that pushes
+  /// to itself would never end: after 10 rounds the marks still left
+  /// are removed. So a mark never reaches the browser.
   String finish(String html) {
-    for (String name in _stackNames) {
-      html = html.replaceAll('$_mark$name\u0000', stacks[name]?.join() ?? '');
+    if (_stackNames.isEmpty) return html;
+    for (int round = 0; round < 10 && html.contains(_mark); round++) {
+      for (String name in _stackNames) {
+        html = html.replaceAll('$_mark$name\u0000', stacks[name]?.join() ?? '');
+      }
     }
-    return html;
+    if (!html.contains(_mark)) return html;
+    return html.replaceAll(
+      RegExp('${RegExp.escape(_mark)}[^\u0000]*\u0000'),
+      '',
+    );
   }
 
   /// the text of [value] for the output: escaped, but not a `SafeString`
@@ -537,7 +547,17 @@ class CsrfNode extends Node {
   void render(RenderContext ctx, Scope scope, StringBuffer out) {
     // the shared data, so the view data can not change the token
     Object? token = ctx.shared.lookup('csrfToken');
-    if (token is Function) token = Function.apply(token, const <Object?>[]);
+    if (token is Function) {
+      try {
+        token = Function.apply(token, const <Object?>[]);
+      } on Object catch (error) {
+        throw ViewException(
+          '@csrf could not read the token: $error',
+          template: ctx.template,
+          line: line,
+        );
+      }
+    }
     if (token is! String || token.isEmpty) {
       throw ViewException(
         '@csrf needs a session. Add SessionMiddleware to the route.',

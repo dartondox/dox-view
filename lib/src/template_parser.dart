@@ -43,6 +43,19 @@ const Set<String> _argDirectives = <String>{
   'method',
 };
 
+/// the ones of [_argDirectives] that are a tag with a space before `(`
+/// only when the first argument is text in quotes. So prose like
+/// `git @push (force)` or `the @yield (curve)` stays text.
+const Set<String> _quotedDirectives = <String>{
+  'extends',
+  'section',
+  'yield',
+  'stack',
+  'push',
+  'prepend',
+  'method',
+};
+
 /// the ones of [_argDirectives] that can take two arguments
 const Set<String> _twoArgDirectives = <String>{'section', 'yield'};
 
@@ -144,7 +157,13 @@ class TemplateParser {
     // before `(`, in the middle of a line, it is a tag only when its args
     // parse. A tag with a body, like `@isset` or `@push`, also needs an
     // `@end` after it.
-    if (token.standalone || !_spaceBeforeArgs(token)) return true;
+    // The layout, stack and `@method` tags also need text in quotes as
+    // the first arg, on any line: `git @push (force)` stays text.
+    if (!_spaceBeforeArgs(token)) return true;
+    if (_quotedDirectives.contains(token.name) && !_quotedFirstArg(token)) {
+      return false;
+    }
+    if (token.standalone) return true;
     int? count = _argCount(token);
     if (count == null) return false;
     if (custom) return true;
@@ -155,12 +174,23 @@ class TemplateParser {
   }
 
   /// the number of args of [token], null when they do not parse
-  int? _argCount(Token token) {
+  int? _argCount(Token token) => _argList(token)?.length;
+
+  /// the args of [token], null when they do not parse
+  List<Expr>? _argList(Token token) {
     try {
-      return ExprParser(token.args ?? '').parseList().length;
+      return ExprParser(token.args ?? '').parseList();
     } on ViewException {
       return null;
     }
+  }
+
+  /// true when the first arg of [token] is text in quotes, like `'title'`
+  bool _quotedFirstArg(Token token) {
+    List<Expr>? args = _argList(token);
+    if (args == null || args.isEmpty) return false;
+    Expr first = args[0];
+    return first is LiteralExpr && first.value is String;
   }
 
   /// true for a directive that has a body and an `@end`.

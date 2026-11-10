@@ -4,10 +4,10 @@
 - New: `$attributes.except(['variant'])` leaves out props that are only for the logic of a component. It can go before `merge()`.
 - Fix: spaces after the last tag at the end of a file stayed in the output. A tag alone on its line now removes them, like it removes the line break.
 - New: layouts with `@extends('layouts/app')`, `@section('name') ... @end` and `@yield('name')`. `@yield('title', 'Home')` has a default. `@section('title', 'Home')` is the short form. A layout can extend another layout. In a page with `@extends`, text outside a section is not printed.
-- New: `@stack('scripts')` prints what `@push('scripts') ... @end` and `@prepend('scripts') ... @end` add. Pushes work from the page, its layout, includes and components. A `@stack` that comes before the `@push` still prints it.
+- New: `@stack('scripts')` prints what `@push('scripts') ... @end` and `@prepend('scripts') ... @end` add. Pushes work from the page, its layout, includes and components. A `@stack` that comes before the `@push` still prints it. A `@stack` inside a `@push` works too.
 - New: `@csrf` prints the hidden `_token` field. It must be alone on its line. With no session it throws a `ViewException`. `@method('PUT')` prints the hidden `_method` field.
 - New: your own tags. `View.directive('datetime', DateTimeDirective())` adds `@datetime(...)`. The class implements `ViewDirective`. The output is escaped, but a `SafeString` is not. `ViewConfig` and `ViewEngine` take `directives` too. The name of a built-in tag throws a `ViewException`. `Scope` is now exported.
-- Note: `@extends(...)`, `@section(...)`, `@yield(...)`, `@stack(...)`, `@push(...)`, `@prepend(...)` and `@method(...)` were plain text before. Now they are tags. With no `( )` they stay text. `@csrf` is a tag only alone on its line. A component with the same name still wins. To print one as text, write `@@push(...)`.
+- Note: `@extends(...)`, `@section(...)`, `@yield(...)`, `@stack(...)`, `@push(...)`, `@prepend(...)` and `@method(...)` were plain text before. Now they are tags. With no `( )` they stay text. With a space before the `(`, they are tags only when the first argument is text in quotes, so text like `git @push (force)` stays text. `@csrf` is a tag only alone on its line. A component with the same name still wins. To print one as text, write `@@push(...)`.
 - Docs: a `$auth` key in the data of `View.render` makes `@auth` true there. Do not pass data from the user as `$auth`.
 
 ## 3.1.0
