@@ -878,6 +878,16 @@ void main() {
       expect(html, startsWith('[ +'));
     });
 
+    test('a mark made by a user is not filled', () {
+      String forged = '\u0000stack123:s\u0000';
+      expect(
+        render("{{ text }}|@stack('s')@push('s')+@end", <String, Object?>{
+          'text': forged,
+        }),
+        '$forged|+',
+      );
+    });
+
     test('@once in a @push pushes once', () {
       expect(
         render(

@@ -5,7 +5,9 @@ import 'scope.dart';
 /// class DateTimeDirective implements ViewDirective {
 ///   @override
 ///   Object? render(List<Object?> args, Scope scope) {
-///     return (args[0] as DateTime).toIso8601String();
+///     Object? value = args[0];
+///     DateTime time = value is DateTime ? value : DateTime.parse('$value');
+///     return '${time.day}/${time.month}/${time.year}';
 ///   }
 /// }
 ///

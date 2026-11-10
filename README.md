@@ -176,7 +176,7 @@ Close a block tag with `@end`. `@else` works in all of them, but not in `@once` 
 
 Put `@auth`, `@guest`, `@production`, `@once` and `@verbatim` alone on their line. In the middle of text, like `@once upon a time`, they stay text.
 
-With a space before the `(`, in the middle of a line, a tag is used only when its args are a valid expression. A tag with a body, like `@isset`, `@empty`, `@env`, `@section` and `@push`, also needs an `@end` after it. So text like `@empty (none)` or `@class (see docs)` stays text. With no space, like `@empty(items)`, or alone on its line, a tag is always a tag.
+With a space before the `(`, in the middle of a line, a tag is used only when its args are a valid expression. A tag with a body, like `@isset`, `@empty`, `@env`, `@section` and `@push`, also needs an `@end` after it. So text like `@empty (none)` or `@class (see docs)` stays text. With no space, like `@empty(items)`, a tag is always a tag. Alone on its line, a tag is also always a tag, with one exception: `@extends`, `@section`, `@yield`, `@stack`, `@push`, `@prepend` and `@method`. With a space before the `(`, these seven are tags only when the first argument is text in quotes, like `@yield ('title')`. This holds on any line. So text like `git @push (force)` or `the @yield (curve)` stays text.
 
 | Tag | What it does |
 | --- | --- |
@@ -387,7 +387,7 @@ A stack collects HTML from many templates and prints it in one place. Use it for
 - The pushes are printed in the order they run. A page with `@extends` runs before its layout.
 - Put `@once` inside `@push` in a component, so the script is added one time only.
 
-`@extends`, `@section`, `@yield`, `@stack`, `@push`, `@prepend` and `@method` need `( )`. With no `( )`, like `@section` in a sentence, they stay text. With a space before the `(`, these tags are tags only when the first argument is text in quotes, like `@yield ('title')`. So text like `git @push (force)` or `the @yield (curve)` stays text.
+`@extends`, `@section`, `@yield`, `@stack`, `@push`, `@prepend` and `@method` need `( )`. With no `( )`, like `@section` in a sentence, they stay text. For a space before the `(`, see the rule in [More tags](#more-tags).
 
 ## Forms
 
@@ -468,7 +468,8 @@ A directive is a tag that your app adds. Write a class with a `render` method. I
 class DateTimeDirective implements ViewDirective {
   @override
   Object? render(List<Object?> args, Scope scope) {
-    DateTime time = args[0]! as DateTime;
+    Object? value = args[0];
+    DateTime time = value is DateTime ? value : DateTime.parse('$value');
     return '${time.day}/${time.month}/${time.year}';
   }
 }
