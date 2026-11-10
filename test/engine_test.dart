@@ -445,14 +445,18 @@ void main() {
 
     test('many nested tags with a space before ( parse fast', () {
       // each tag used to scan all the tags after it, again for each
-      // tag inside it: 2 more levels took 4 times as long. 200 levels
-      // would never end.
-      int levels = 200;
+      // tag inside it: 2 more levels took 4 times as long. 24 levels
+      // took about 6 seconds, and now take a few milliseconds. The
+      // parse does not wait, so a test timeout can not stop it: keep
+      // the level count low enough for the old code to end.
+      int levels = 24;
       String source = 'a ${'@isset (x) ' * levels}y${' @end' * levels} b';
+      Stopwatch watch = Stopwatch()..start();
       expect(
         render(source, <String, Object?>{'x': 1}),
         'a ${' ' * levels}y${' ' * levels} b',
       );
+      expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
     });
 
     test('spaces after the last tag at the end of the file are removed', () {

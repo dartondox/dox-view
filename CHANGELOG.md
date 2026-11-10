@@ -1,7 +1,7 @@
 ## Unreleased
 
 - Fix: `@empty (none)` alone on its line threw `@empty has no @end`. Now a tag with a body and a space before the `(`, like `@isset (x)` or `@empty (x)`, is a tag only when its own `@end` comes after it, on any line. The `@end` of a block around it does not count. Else the text stays as it is. Templates that worked before still work the same.
-- Fix: many nested tags with a space before the `(`, like `@isset (x)`, made the parse very slow. Each extra level took about twice as long, so 40 levels would take hours. Now the parser counts the `@end` tags once, so the time grows in a straight line.
+- Fix: many nested tags with a space before the `(`, like `@isset (x)`, made the parse very slow. Each extra level took about twice as long, so 40 levels would take days. Now the parser counts the `@end` tags once, so the time grows in a straight line.
 - Fix: text like `@empty (none)` or `@class (see docs)` threw an error since 3.1.0. The new rule is for a tag with a space before the `(`, in the middle of a line. It is a tag only when its args are a valid expression. `@isset`, `@empty` and `@env` also need an `@end` after them. Else the text stays as it is. A tag with no space works as before. Templates that worked on 3.1.0 still work.
 - New: `$attributes.except(['variant'])` leaves out props that are only for the logic of a component. It can go before `merge()`.
 - Fix: spaces after the last tag at the end of a file stayed in the output. A tag alone on its line now removes them, like it removes the line break.
