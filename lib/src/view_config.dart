@@ -46,14 +46,17 @@ class ViewConfig {
   /// Print `true` as `1`, `false` as nothing, and a whole number like
   /// `10.0` as `10`. Off by default: they print as `true`, `false` and
   /// `10.0`.
+  // NEXT MAJOR: make this the default (true).
   final bool bladeOutput;
 
   /// A variable that does not exist throws a `ViewException`. Off by
   /// default: it prints nothing. `@isset(x)`, `x ?? 'default'` and
   /// `x?.name` never throw.
+  // NEXT MAJOR: make this the default (true).
   final bool strictVariables;
 
   /// The text `'0'` is false in `@if` and the other conditions. Off by
   /// default: `'0'` is true, like any text that is not empty.
+  // NEXT MAJOR: make this the default (true).
   final bool stringZeroIsFalse;
 }
