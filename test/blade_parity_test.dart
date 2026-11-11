@@ -217,7 +217,7 @@ void main() {
       );
     });
 
-    test('on: big and special numbers keep their text', () {
+    test('default: big and special numbers keep their text', () {
       expect(
         Harness.engine('{{ a }} {{ b }} {{ c }}').render(
           'main',
@@ -227,7 +227,7 @@ void main() {
       );
     });
 
-    test('on: @yield, @section and @method print the same way', () {
+    test('default: @yield, @section and @method print the same way', () {
       expect(
         Harness.engine(
           "@section('a', 2.0)\n@yield('a') @yield('b', true) @method(1.0)",
@@ -236,7 +236,7 @@ void main() {
       );
     });
 
-    test('on: + still joins text the Dart way', () {
+    test('default: + still joins text the Dart way', () {
       expect(Harness.engine("{{ 'a' + true }}").render('main'), 'atrue');
     });
   });
@@ -695,7 +695,7 @@ void main() {
       );
     });
 
-    test('on: a missing variable is an error with its name', () {
+    test('default: a missing variable is an error with its name', () {
       for (String source in <String>[
         '\n{{ missing }}',
         '\n@if(missing) x @end',
@@ -712,7 +712,7 @@ void main() {
       }
     });
 
-    test('on: a variable with a null value is fine', () {
+    test('default: a variable with a null value is fine', () {
       expect(
         Harness.engine('[{{ none }}]')
             .render('main', <String, Object?>{'none': null}),
@@ -720,7 +720,7 @@ void main() {
       );
     });
 
-    test('on: @isset, @empty, ?? and ?. do not throw', () {
+    test('default: @isset, @empty, ?? and ?. do not throw', () {
       expect(
         Harness.engine(
           '@isset(missing)\nA\n@else\nB\n@end\n'
@@ -733,7 +733,7 @@ void main() {
       );
     });
 
-    test('on: the right side of ?? and a field after ?? still throw', () {
+    test('default: the right side of ?? and a field after ?? still throw', () {
       for (String source in <String>[
         '{{ none ?? missing }}',
         '{{ (missing ?? none).name }}',
@@ -748,7 +748,7 @@ void main() {
       }
     });
 
-    test('on: @error with no errors prints nothing', () {
+    test('default: @error with no errors prints nothing', () {
       expect(
         Harness.engine("[@error('email')\n{{ message }}\n@end\n]")
             .render('main'),
@@ -756,7 +756,7 @@ void main() {
       );
     });
 
-    test('on: components, includes, loops and globals work', () {
+    test('default: components, includes, loops and globals work', () {
       expect(
         Harness.engine(
           '@each(x in [1])\n{{ \$loop.index }}{{ x }}\n@end\n'
@@ -806,7 +806,7 @@ void main() {
       );
     });
 
-    test('on: other text and the number 0 are as before', () {
+    test('default: other text and the number 0 are as before', () {
       expect(
         Harness.engine(
           "@if('0.0') a @end|@if('00') b @end|@if(' ') c @end|@if(0) d @end|"
@@ -815,6 +815,20 @@ void main() {
         ).render('main'),
         ' a | b | c |||',
       );
+    });
+  });
+
+  group('Scope defaults', () {
+    test('Scope() has the new defaults', () {
+      Scope scope = Scope(<String, Object?>{});
+      expect(scope.strictVariables, isTrue);
+      expect(scope.stringZeroIsFalse, isTrue);
+    });
+
+    test('Scope.root() has the new defaults', () {
+      Scope scope = Scope.root(<String, Object?>{});
+      expect(scope.strictVariables, isTrue);
+      expect(scope.stringZeroIsFalse, isTrue);
     });
   });
 
