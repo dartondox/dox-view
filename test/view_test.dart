@@ -173,22 +173,24 @@ void main() {
     await File('${dir.path}/options.dox.html')
         .writeAsString("{{ on }}|@if('0') zero @end|{{ missing ?? 'none' }}");
     Map<String, dynamic> data = <String, dynamic>{'on': true};
-    expect(View.render('options', data), 'true| zero |none');
+    // the defaults: Blade output, missing variables throw, '0' is false
+    expect(View.render('options', data), '1||none');
+    expect(() => View.render('options'), throwsA(isA<ViewException>()));
     expect(View.engine.bladeWarnings, isTrue);
     View.configure(
       ViewConfig(
         path: dir.path,
         cache: false,
         bladeWarnings: false,
-        bladeOutput: true,
-        strictVariables: true,
-        stringZeroIsFalse: true,
+        bladeOutput: false,
+        strictVariables: false,
+        stringZeroIsFalse: false,
       ),
     );
     try {
-      expect(View.render('options', data), '1||none');
+      expect(View.render('options', data), 'true| zero |none');
       expect(View.engine.bladeWarnings, isFalse);
-      expect(() => View.render('options'), throwsA(isA<ViewException>()));
+      expect(View.render('options'), '| zero |none');
     } finally {
       View.configure(ViewConfig(path: dir.path, cache: false));
     }

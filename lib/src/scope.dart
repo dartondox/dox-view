@@ -4,14 +4,14 @@ import 'view_exception.dart';
 /// a name it does not have.
 class Scope {
   Scope(this.vars, [this.parent])
-    : strictVariables = parent?.strictVariables ?? false,
-      stringZeroIsFalse = parent?.stringZeroIsFalse ?? false;
+    : strictVariables = parent?.strictVariables ?? true,
+      stringZeroIsFalse = parent?.stringZeroIsFalse ?? true;
 
   /// the first scope of an engine. The scopes under it get its options.
   Scope.root(
     this.vars, {
-    this.strictVariables = false,
-    this.stringZeroIsFalse = false,
+    this.strictVariables = true,
+    this.stringZeroIsFalse = true,
   }) : parent = null;
 
   final Map<String, Object?> vars;
