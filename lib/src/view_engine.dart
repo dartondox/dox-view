@@ -26,9 +26,9 @@ class ViewEngine {
     Map<String, ViewDirective> directives = const <String, ViewDirective>{},
     this.bladeWarnings = true,
     this.warningSink,
-    this.bladeOutput = false,
-    bool strictVariables = false,
-    bool stringZeroIsFalse = false,
+    this.bladeOutput = true,
+    bool strictVariables = true,
+    bool stringZeroIsFalse = true,
   }) : globals = Scope.root(
          <String, Object?>{'json': SafeString.json, ...globals},
          strictVariables: strictVariables,
@@ -61,13 +61,16 @@ class ViewEngine {
   final StringSink? warningSink;
 
   /// print `true` as `1`, `false` as nothing, and a number like `10.0`
-  /// as `10`
+  /// as `10`. On by default. When false, they print as `true`, `false`
+  /// and `10.0`.
   final bool bladeOutput;
 
-  /// a variable that does not exist throws a [ViewException]
+  /// a variable that does not exist throws a [ViewException]. On by
+  /// default. When false, it prints nothing.
   bool get strictVariables => globals.strictVariables;
 
-  /// the text `'0'` is false in a condition
+  /// the text `'0'` is false in a condition. On by default. When false,
+  /// `'0'` is true.
   bool get stringZeroIsFalse => globals.stringZeroIsFalse;
 
   final Map<String, Template> _templates = <String, Template>{};

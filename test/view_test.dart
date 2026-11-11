@@ -173,25 +173,85 @@ void main() {
     await File('${dir.path}/options.dox.html')
         .writeAsString("{{ on }}|@if('0') zero @end|{{ missing ?? 'none' }}");
     Map<String, dynamic> data = <String, dynamic>{'on': true};
-    expect(View.render('options', data), 'true| zero |none');
+    // the defaults: Blade output, missing variables throw, '0' is false
+    expect(View.render('options', data), '1||none');
+    expect(() => View.render('options'), throwsA(isA<ViewException>()));
     expect(View.engine.bladeWarnings, isTrue);
     View.configure(
       ViewConfig(
         path: dir.path,
         cache: false,
         bladeWarnings: false,
-        bladeOutput: true,
-        strictVariables: true,
-        stringZeroIsFalse: true,
+        bladeOutput: false,
+        strictVariables: false,
+        stringZeroIsFalse: false,
       ),
     );
     try {
-      expect(View.render('options', data), '1||none');
+      expect(View.render('options', data), 'true| zero |none');
       expect(View.engine.bladeWarnings, isFalse);
-      expect(() => View.render('options'), throwsA(isA<ViewException>()));
+      expect(View.render('options'), '| zero |none');
     } finally {
       View.configure(ViewConfig(path: dir.path, cache: false));
     }
+  });
+
+  group('one option off at a time', () {
+    tearDown(() {
+      View.configure(ViewConfig(path: dir.path, cache: false));
+    });
+
+    // [out] is the text of {{ flag }}, [zero] is what @if('0') shows,
+    // [strict] says if a missing variable throws
+    void check(
+      ViewConfig config, {
+      required String out,
+      required String zero,
+      required bool strict,
+    }) {
+      View.configure(config);
+      Map<String, dynamic> data = <String, dynamic>{'flag': true};
+      expect(
+        View.render('options_one', <String, dynamic>{...data, 'missing': ''}),
+        '$out|$zero',
+      );
+      expect(
+        () => View.render('options_one', data),
+        strict ? throwsA(isA<ViewException>()) : returnsNormally,
+      );
+    }
+
+    setUpAll(() async {
+      await File('${dir.path}/options_one.dox.html')
+          .writeAsString("{{ flag }}|@if('0') zero @end{{ missing }}");
+    });
+
+    test('only bladeOutput off', () {
+      check(
+        ViewConfig(path: dir.path, cache: false, bladeOutput: false),
+        out: 'true',
+        zero: '',
+        strict: true,
+      );
+    });
+
+    test('only strictVariables off', () {
+      check(
+        ViewConfig(path: dir.path, cache: false, strictVariables: false),
+        out: '1',
+        zero: '',
+        strict: false,
+      );
+    });
+
+    test('only stringZeroIsFalse off', () {
+      check(
+        ViewConfig(path: dir.path, cache: false, stringZeroIsFalse: false),
+        out: '1',
+        zero: ' zero ',
+        strict: true,
+      );
+    });
   });
 
   test('@csrf with no session is an error', () {

@@ -85,10 +85,7 @@ class RenderContext {
   String text(Object? value) {
     if (engine.bladeOutput) {
       if (value is bool) return value ? '1' : '';
-      if (value is double) {
-        String text = value.toString();
-        return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
-      }
+      if (value is double) return bladeDouble(value);
     }
     return stringify(value);
   }
@@ -489,7 +486,7 @@ class ComponentNode extends Node {
       r'$props': props,
       r'$slots': rendered,
       r'$slot': rendered['main'],
-      r'$attributes': Attributes(vars),
+      r'$attributes': Attributes(vars, blade: ctx.engine.bladeOutput),
     }, ctx.shared);
     ctx.renderTemplate(template, inner, out, line);
   }

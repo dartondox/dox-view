@@ -82,8 +82,23 @@ void main() {
       );
     });
 
-    test('null and a missing variable print nothing', () {
-      expect(render('[{{ nothing }}][{{ missing }}]'), '[][]');
+    test('null prints nothing, a missing variable is an error', () {
+      expect(
+        render('[{{ nothing }}]', <String, Object?>{'nothing': null}),
+        '[]',
+      );
+      expect(() => render('[{{ missing }}]'), throwsA(isA<ViewException>()));
+    });
+
+    test('true prints 1, false prints nothing, 10.0 prints 10', () {
+      expect(
+        render('[{{ yes }}][{{ no }}][{{ ten }}]', <String, Object?>{
+          'yes': true,
+          'no': false,
+          'ten': 10.0,
+        }),
+        '[1][][10]',
+      );
     });
 
     test('comments and escaped tags', () {
@@ -117,7 +132,7 @@ void main() {
           '{{ 1 + 2 * 3 }} {{ (1 + 2) * 3 }} {{ 7 % 4 }} {{ 7 ~/ 2 }} '
           '{{ 2 > 1 && 1 >= 1 }} {{ !true || false }} {{ 1 === 1.0 }}',
         ),
-        '7 9 3 3 true false true',
+        '7 9 3 3 1  1',
       );
     });
 
@@ -141,7 +156,7 @@ void main() {
           '{{ items.contains(2) }}',
           data,
         ),
-        '5 DOX 1-2-3 9.50 2 true',
+        '5 DOX 1-2-3 9.50 2 1',
       );
     });
 
@@ -182,7 +197,7 @@ void main() {
 
     test('@unless', () {
       expect(
-        render('@unless(x) no @else yes @end', <String, Object?>{}),
+        render('@unless(x) no @else yes @end', <String, Object?>{'x': false}),
         ' no ',
       );
     });
@@ -358,7 +373,7 @@ void main() {
       ViewEngine engine = ViewEngine(
         const MemoryTemplateLoader(<String, String>{
           'page': "@component('layout')@end",
-          'layout': '{{ user }}|{{ secret }}',
+          'layout': "{{ user }}|{{ secret ?? 'none' }}",
         }),
       );
       expect(
@@ -367,16 +382,23 @@ void main() {
           <String, Object?>{'secret': 'x'},
           <String, Object?>{'user': 'Ann'},
         ),
-        'Ann|',
+        'Ann|none',
       );
     });
 
     test('a component does not see the variables of the caller', () {
+      // the component reads name, which only the caller has
       expect(
-        render("@!component('components/form/input')", <String, Object?>{
+        () => render("@!component('components/form/input')", <String, Object?>{
           'name': 'leak',
         }, templates),
-        '<input name="">',
+        throwsA(
+          isA<ViewException>().having(
+            (ViewException e) => e.message,
+            'message',
+            contains('"name" is not defined'),
+          ),
+        ),
       );
     });
   });
@@ -624,6 +646,29 @@ void main() {
           templates,
         ),
         '<i id="a" n="2" hidden>a</i>',
+      );
+    });
+
+    test('\$attributes prints numbers like {{ }} with bladeOutput', () {
+      const String source = '@!attrs({ a: 1.0, b: 0.5, c: 3, d: true })';
+      Map<String, String> others = <String, String>{
+        'components/attrs':
+            '<i {{ \$attributes }}|{{ \$attributes.merge({ e: 2.0 }) }}|'
+            '{{ \$attributes.except([\'d\']) }}></i>',
+      };
+      String run(bool blade) => ViewEngine(
+        MemoryTemplateLoader(<String, String>{'main': source, ...others}),
+        bladeOutput: blade,
+      ).render('main');
+      expect(
+        run(true),
+        '<i a="1" b="0.5" c="3" d|e="2" a="1" b="0.5" c="3" d|'
+        'a="1" b="0.5" c="3"></i>',
+      );
+      expect(
+        run(false),
+        '<i a="1.0" b="0.5" c="3" d|e="2.0" a="1.0" b="0.5" c="3" d|'
+        'a="1.0" b="0.5" c="3"></i>',
       );
     });
 

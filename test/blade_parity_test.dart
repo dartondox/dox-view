@@ -30,9 +30,9 @@ class Harness {
     StringSink? sink,
     bool cache = true,
     bool bladeWarnings = true,
-    bool bladeOutput = false,
-    bool strictVariables = false,
-    bool stringZeroIsFalse = false,
+    bool bladeOutput = true,
+    bool strictVariables = true,
+    bool stringZeroIsFalse = true,
     Map<String, ViewDirective> directives = const <String, ViewDirective>{},
   }) => ViewEngine(
     MemoryTemplateLoader(<String, String>{'main': source, ...others}),
@@ -202,23 +202,24 @@ void main() {
       'text': 'true 10.0',
     };
 
-    test('off by default: the output is the same as before', () {
+    test('on by default: true is 1, false is empty, 10.0 is 10', () {
       expect(
-        Harness.render(source, data),
-        '[true][false][][10.0][0.5][true][10.0][true][1][true 10.0]',
-      );
-    });
-
-    test('on: true is 1, false is empty, 10.0 is 10', () {
-      expect(
-        Harness.engine(source, bladeOutput: true).render('main', data),
+        ViewEngine(MemoryTemplateLoader(<String, String>{'main': source}))
+            .render('main', data),
         '[1][][][10][0.5][1][10][1][1][true 10.0]',
       );
     });
 
-    test('on: big and special numbers keep their text', () {
+    test('off: true, false and 10.0 print as Dart prints them', () {
       expect(
-        Harness.engine('{{ a }} {{ b }} {{ c }}', bladeOutput: true).render(
+        Harness.engine(source, bladeOutput: false).render('main', data),
+        '[true][false][][10.0][0.5][true][10.0][true][1][true 10.0]',
+      );
+    });
+
+    test('default: big and special numbers keep their text', () {
+      expect(
+        Harness.engine('{{ a }} {{ b }} {{ c }}').render(
           'main',
           <String, Object?>{'a': 1e21, 'b': double.nan, 'c': -2.0},
         ),
@@ -226,27 +227,23 @@ void main() {
       );
     });
 
-    test('on: @yield, @section and @method print the same way', () {
+    test('default: @yield, @section and @method print the same way', () {
       expect(
         Harness.engine(
           "@section('a', 2.0)\n@yield('a') @yield('b', true) @method(1.0)",
-          bladeOutput: true,
         ).render('main'),
         '2 1 <input type="hidden" name="_method" value="1">',
       );
     });
 
-    test('on: + still joins text the Dart way', () {
-      expect(
-        Harness.engine("{{ 'a' + true }}", bladeOutput: true).render('main'),
-        'atrue',
-      );
+    test('default: + still joins text the Dart way', () {
+      expect(Harness.engine("{{ 'a' + true }}").render('main'), 'atrue');
     });
   });
 
   group('@include with data', () {
     Map<String, String> others = <String, String>{
-      'card': '<{{ title }}|{{ user }}|{{ extra }}>',
+      'card': "<{{ title ?? '' }}|{{ user ?? '' }}|{{ extra ?? '' }}>",
     };
 
     test('the include sees the parent variables and the data', () {
@@ -263,7 +260,8 @@ void main() {
     test('the data wins and does not leak back', () {
       expect(
         Harness.render(
-          "@include('card', { user: 'Bob', title: 'T' })[{{ user }}|{{ title }}]",
+          "@include('card', { user: 'Bob', title: 'T' })"
+          "[{{ user }}|{{ title ?? '' }}]",
           <String, Object?>{'user': 'Ann'},
           others,
         ),
@@ -344,7 +342,8 @@ void main() {
             'items': <String>['a', 'b'],
           },
         ),
-        '0truefalse2 \n1falsetrue2 \n',
+        // with bladeOutput, true prints 1 and false prints nothing
+        '012 \n112 \n',
       );
     });
 
@@ -359,7 +358,7 @@ void main() {
             'items': <String>['a', 'b', 'c'],
           },
         ),
-        '1/3 2 false true 1[]\n2/3 1 true false 1[]\n3/3 0 false true 1[]\n',
+        '1/3 2  1 1[]\n2/3 1 1  1[]\n3/3 0  1 1[]\n',
       );
     });
 
@@ -456,7 +455,10 @@ void main() {
 
     test('a map literal and text work', () {
       expect(
-        Harness.render("@json({ a: [1, 2] }) @json('x') @json(missing)"),
+        Harness.render(
+          "@json({ a: [1, 2] }) @json('x') @json(none)",
+          <String, Object?>{'none': null},
+        ),
         '{"a":[1,2]} "x" null',
       );
     });
@@ -674,11 +676,23 @@ void main() {
   });
 
   group('strictVariables', () {
-    test('off by default: a missing variable prints nothing', () {
-      expect(Harness.render('[{{ missing }}]@if(missing) x @end'), '[]');
+    test('off: a missing variable prints nothing', () {
+      expect(
+        Harness.engine(
+          '[{{ missing }}]@if(missing) x @end',
+          strictVariables: false,
+        ).render('main'),
+        '[]',
+      );
     });
 
-    test('on: a missing variable is an error with its name', () {
+    test('on by default: a missing variable is an error with its name', () {
+      expect(
+        () => ViewEngine(
+          const MemoryTemplateLoader(<String, String>{'main': '{{ missing }}'}),
+        ).render('main'),
+        Harness.throwsView('the variable "missing" is not defined'),
+      );
       for (String source in <String>[
         '\n{{ missing }}',
         '\n@if(missing) x @end',
@@ -688,24 +702,22 @@ void main() {
         '\n@each(x in missing)\n@end',
       ]) {
         expect(
-          () => Harness.engine(source, strictVariables: true).render('main'),
+          () => Harness.engine(source).render('main'),
           Harness.throwsView('the variable "missing" is not defined', line: 2),
           reason: source,
         );
       }
     });
 
-    test('on: a variable with a null value is fine', () {
+    test('default: a variable with a null value is fine', () {
       expect(
-        Harness.engine(
-          '[{{ none }}]',
-          strictVariables: true,
-        ).render('main', <String, Object?>{'none': null}),
+        Harness.engine('[{{ none }}]')
+            .render('main', <String, Object?>{'none': null}),
         '[]',
       );
     });
 
-    test('on: @isset, @empty, ?? and ?. do not throw', () {
+    test('default: @isset, @empty, ?? and ?. do not throw', () {
       expect(
         Harness.engine(
           '@isset(missing)\nA\n@else\nB\n@end\n'
@@ -713,45 +725,40 @@ void main() {
           "{{ missing ?? 'D' }} {{ missing ?? other ?? 'E' }} "
           '[{{ missing?.name }}] [{{ missing?.trim() }}] '
           "{{ missing?.a?.b ?? 'F' }}",
-          strictVariables: true,
         ).render('main'),
         'B\nC\nD E [] [] F',
       );
     });
 
-    test('on: the right side of ?? and a field after ?? still throw', () {
+    test('default: the right side of ?? and a field after ?? still throw', () {
       for (String source in <String>[
         '{{ none ?? missing }}',
         '{{ (missing ?? none).name }}',
       ]) {
         expect(
-          () => Harness.engine(
-            source,
-            strictVariables: true,
-          ).render('main', <String, Object?>{'none': null}),
+          () =>
+              Harness.engine(source)
+                  .render('main', <String, Object?>{'none': null}),
           throwsA(isA<ViewException>()),
           reason: source,
         );
       }
     });
 
-    test('on: @error with no errors prints nothing', () {
+    test('default: @error with no errors prints nothing', () {
       expect(
-        Harness.engine(
-          "[@error('email')\n{{ message }}\n@end\n]",
-          strictVariables: true,
-        ).render('main'),
+        Harness.engine("[@error('email')\n{{ message }}\n@end\n]")
+            .render('main'),
         '[]',
       );
     });
 
-    test('on: components, includes, loops and globals work', () {
+    test('default: components, includes, loops and globals work', () {
       expect(
         Harness.engine(
           '@each(x in [1])\n{{ \$loop.index }}{{ x }}\n@end\n'
           "@include('inc', { a: 1 })\n@!component('comp', { b: 2 })\n"
           '{{ json(1) }}',
-          strictVariables: true,
           others: <String, String>{'inc': '{{ a }}', 'comp': '{{ b }}'},
         ).render('main'),
         '01\n121',
@@ -759,7 +766,6 @@ void main() {
       expect(
         () => Harness.engine(
           "@!component('comp')",
-          strictVariables: true,
           others: <String, String>{'comp': '\n{{ pageVar }}'},
         ).render('main', <String, Object?>{'pageVar': 1}),
         throwsA(
@@ -778,30 +784,48 @@ void main() {
         '@empty(zero) g @end|<i @class({ on: zero }) @checked(zero)>';
     Map<String, Object?> data = <String, Object?>{'zero': '0'};
 
-    test("off by default: '0' is true", () {
+    test("off: '0' is true", () {
       expect(
-        Harness.render(source, data),
+        Harness.engine(
+          source,
+          bladeOutput: false,
+          stringZeroIsFalse: false,
+        ).render('main', data),
         ' a ||c|0|f|false||<i class="on" checked>',
       );
     });
 
-    test("on: '0' is false", () {
+    test("on by default: '0' is false", () {
       expect(
-        Harness.engine(source, stringZeroIsFalse: true).render('main', data),
-        '| b |d|e|0|true| g |<i class="" >',
+        ViewEngine(MemoryTemplateLoader(<String, String>{'main': source}))
+            .render('main', data),
+        '| b |d|e|0|1| g |<i class="" >',
       );
     });
 
-    test('on: other text and the number 0 are as before', () {
+    test('default: other text and the number 0 are as before', () {
       expect(
         Harness.engine(
           "@if('0.0') a @end|@if('00') b @end|@if(' ') c @end|@if(0) d @end|"
           "@if('') e @end|@includeIf('0', 'x')",
-          stringZeroIsFalse: true,
           others: <String, String>{'x': 'X'},
         ).render('main'),
         ' a | b | c |||',
       );
+    });
+  });
+
+  group('Scope defaults', () {
+    test('Scope() has the new defaults', () {
+      Scope scope = Scope(<String, Object?>{});
+      expect(scope.strictVariables, isTrue);
+      expect(scope.stringZeroIsFalse, isTrue);
+    });
+
+    test('Scope.root() has the new defaults', () {
+      Scope scope = Scope.root(<String, Object?>{});
+      expect(scope.strictVariables, isTrue);
+      expect(scope.stringZeroIsFalse, isTrue);
     });
   });
 
@@ -810,18 +834,23 @@ void main() {
       MemoryTemplateLoader loader = MemoryTemplateLoader(<String, String>{
         'main': "[{{ on }}]@if('0') x @end",
       });
-      ViewEngine plain = ViewEngine(loader);
-      ViewEngine blade = ViewEngine(
+      ViewEngine plain = ViewEngine(
         loader,
-        bladeOutput: true,
-        stringZeroIsFalse: true,
+        bladeOutput: false,
+        strictVariables: false,
+        stringZeroIsFalse: false,
       );
+      ViewEngine blade = ViewEngine(loader);
       Map<String, Object?> data = <String, Object?>{'on': true};
       for (int round = 0; round < 2; round++) {
         expect(plain.render('main', data), '[true] x ');
         expect(blade.render('main', data), '[1]');
       }
+      expect(plain.bladeOutput, isFalse);
       expect(plain.strictVariables, isFalse);
+      expect(plain.stringZeroIsFalse, isFalse);
+      expect(blade.bladeOutput, isTrue);
+      expect(blade.strictVariables, isTrue);
       expect(blade.stringZeroIsFalse, isTrue);
     });
   });
