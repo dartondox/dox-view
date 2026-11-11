@@ -23,7 +23,9 @@ class Result {
 }
 
 class Harness {
-  /// an engine for the template [source] as `main`, with [others]
+  /// an engine for the template [source] as `main`, with [others].
+  /// It turns on `bladeOutput`, `strictVariables` and
+  /// `stringZeroIsFalse`. The engine has them off by default.
   static ViewEngine engine(
     String source, {
     Map<String, String> others = const <String, String>{},
@@ -202,22 +204,25 @@ void main() {
       'text': 'true 10.0',
     };
 
-    test('on by default: true is 1, false is empty, 10.0 is 10', () {
+    test('off by default: true, false and 10.0 print as Dart prints them', () {
       expect(
         ViewEngine(MemoryTemplateLoader(<String, String>{'main': source}))
             .render('main', data),
-        '[1][][][10][0.5][1][10][1][1][true 10.0]',
-      );
-    });
-
-    test('off: true, false and 10.0 print as Dart prints them', () {
-      expect(
-        Harness.engine(source, bladeOutput: false).render('main', data),
         '[true][false][][10.0][0.5][true][10.0][true][1][true 10.0]',
       );
     });
 
-    test('default: big and special numbers keep their text', () {
+    test('on: true is 1, false is empty, 10.0 is 10', () {
+      expect(
+        ViewEngine(
+          MemoryTemplateLoader(<String, String>{'main': source}),
+          bladeOutput: true,
+        ).render('main', data),
+        '[1][][][10][0.5][1][10][1][1][true 10.0]',
+      );
+    });
+
+    test('on: big and special numbers keep their text', () {
       expect(
         Harness.engine('{{ a }} {{ b }} {{ c }}').render(
           'main',
@@ -227,7 +232,7 @@ void main() {
       );
     });
 
-    test('default: @yield, @section and @method print the same way', () {
+    test('on: @yield, @section and @method print the same way', () {
       expect(
         Harness.engine(
           "@section('a', 2.0)\n@yield('a') @yield('b', true) @method(1.0)",
@@ -236,7 +241,7 @@ void main() {
       );
     });
 
-    test('default: + still joins text the Dart way', () {
+    test('on: + still joins text the Dart way', () {
       expect(Harness.engine("{{ 'a' + true }}").render('main'), 'atrue');
     });
   });
@@ -676,20 +681,22 @@ void main() {
   });
 
   group('strictVariables', () {
-    test('off: a missing variable prints nothing', () {
+    test('off by default: a missing variable prints nothing', () {
       expect(
-        Harness.engine(
-          '[{{ missing }}]@if(missing) x @end',
-          strictVariables: false,
+        ViewEngine(
+          const MemoryTemplateLoader(<String, String>{
+            'main': '[{{ missing }}]@if(missing) x @end',
+          }),
         ).render('main'),
         '[]',
       );
     });
 
-    test('on by default: a missing variable is an error with its name', () {
+    test('on: a missing variable is an error with its name', () {
       expect(
         () => ViewEngine(
           const MemoryTemplateLoader(<String, String>{'main': '{{ missing }}'}),
+          strictVariables: true,
         ).render('main'),
         Harness.throwsView('the variable "missing" is not defined'),
       );
@@ -709,7 +716,7 @@ void main() {
       }
     });
 
-    test('default: a variable with a null value is fine', () {
+    test('on: a variable with a null value is fine', () {
       expect(
         Harness.engine('[{{ none }}]')
             .render('main', <String, Object?>{'none': null}),
@@ -717,7 +724,7 @@ void main() {
       );
     });
 
-    test('default: @isset, @empty, ?? and ?. do not throw', () {
+    test('on: @isset, @empty, ?? and ?. do not throw', () {
       expect(
         Harness.engine(
           '@isset(missing)\nA\n@else\nB\n@end\n'
@@ -730,7 +737,7 @@ void main() {
       );
     });
 
-    test('default: the right side of ?? and a field after ?? still throw', () {
+    test('on: the right side of ?? and a field after ?? still throw', () {
       for (String source in <String>[
         '{{ none ?? missing }}',
         '{{ (missing ?? none).name }}',
@@ -745,7 +752,7 @@ void main() {
       }
     });
 
-    test('default: @error with no errors prints nothing', () {
+    test('on: @error with no errors prints nothing', () {
       expect(
         Harness.engine("[@error('email')\n{{ message }}\n@end\n]")
             .render('main'),
@@ -753,7 +760,7 @@ void main() {
       );
     });
 
-    test('default: components, includes, loops and globals work', () {
+    test('on: components, includes, loops and globals work', () {
       expect(
         Harness.engine(
           '@each(x in [1])\n{{ \$loop.index }}{{ x }}\n@end\n'
@@ -784,26 +791,25 @@ void main() {
         '@empty(zero) g @end|<i @class({ on: zero }) @checked(zero)>';
     Map<String, Object?> data = <String, Object?>{'zero': '0'};
 
-    test("off: '0' is true", () {
+    test("off by default: '0' is true", () {
       expect(
-        Harness.engine(
-          source,
-          bladeOutput: false,
-          stringZeroIsFalse: false,
-        ).render('main', data),
+        ViewEngine(MemoryTemplateLoader(<String, String>{'main': source}))
+            .render('main', data),
         ' a ||c|0|f|false||<i class="on" checked>',
       );
     });
 
-    test("on by default: '0' is false", () {
+    test("on: '0' is false", () {
       expect(
-        ViewEngine(MemoryTemplateLoader(<String, String>{'main': source}))
-            .render('main', data),
-        '| b |d|e|0|1| g |<i class="" >',
+        ViewEngine(
+          MemoryTemplateLoader(<String, String>{'main': source}),
+          stringZeroIsFalse: true,
+        ).render('main', data),
+        '| b |d|e|0|true| g |<i class="" >',
       );
     });
 
-    test('default: other text and the number 0 are as before', () {
+    test('on: other text and the number 0 are as before', () {
       expect(
         Harness.engine(
           "@if('0.0') a @end|@if('00') b @end|@if(' ') c @end|@if(0) d @end|"
@@ -816,14 +822,25 @@ void main() {
   });
 
   group('Scope defaults', () {
-    test('Scope() has the new defaults', () {
+    test('Scope() has both options off', () {
       Scope scope = Scope(<String, Object?>{});
-      expect(scope.strictVariables, isTrue);
-      expect(scope.stringZeroIsFalse, isTrue);
+      expect(scope.strictVariables, isFalse);
+      expect(scope.stringZeroIsFalse, isFalse);
     });
 
-    test('Scope.root() has the new defaults', () {
+    test('Scope.root() has both options off', () {
       Scope scope = Scope.root(<String, Object?>{});
+      expect(scope.strictVariables, isFalse);
+      expect(scope.stringZeroIsFalse, isFalse);
+    });
+
+    test('a Scope gets the options of its parent', () {
+      Scope root = Scope.root(
+        <String, Object?>{},
+        strictVariables: true,
+        stringZeroIsFalse: true,
+      );
+      Scope scope = Scope(<String, Object?>{}, root);
       expect(scope.strictVariables, isTrue);
       expect(scope.stringZeroIsFalse, isTrue);
     });
@@ -834,13 +851,13 @@ void main() {
       MemoryTemplateLoader loader = MemoryTemplateLoader(<String, String>{
         'main': "[{{ on }}]@if('0') x @end",
       });
-      ViewEngine plain = ViewEngine(
+      ViewEngine plain = ViewEngine(loader);
+      ViewEngine blade = ViewEngine(
         loader,
-        bladeOutput: false,
-        strictVariables: false,
-        stringZeroIsFalse: false,
+        bladeOutput: true,
+        strictVariables: true,
+        stringZeroIsFalse: true,
       );
-      ViewEngine blade = ViewEngine(loader);
       Map<String, Object?> data = <String, Object?>{'on': true};
       for (int round = 0; round < 2; round++) {
         expect(plain.render('main', data), '[true] x ');

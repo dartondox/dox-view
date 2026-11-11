@@ -15,9 +15,9 @@ class ViewConfig {
     this.globals = const <String, Object?>{},
     this.directives = const <String, ViewDirective>{},
     this.bladeWarnings = true,
-    this.bladeOutput = true,
-    this.strictVariables = true,
-    this.stringZeroIsFalse = true,
+    this.bladeOutput = false,
+    this.strictVariables = false,
+    this.stringZeroIsFalse = false,
   });
 
   /// The folder of the templates.
@@ -44,17 +44,16 @@ class ViewConfig {
   final bool bladeWarnings;
 
   /// Print `true` as `1`, `false` as nothing, and a whole number like
-  /// `10.0` as `10`. On by default. When false, they print as `true`, `false` and
+  /// `10.0` as `10`. Off by default: they print as `true`, `false` and
   /// `10.0`.
   final bool bladeOutput;
 
-  /// A variable that does not exist throws a `ViewException`. On by
-  /// default. When false, it prints nothing. `@isset(x)`, `x ?? 'default'` and
+  /// A variable that does not exist throws a `ViewException`. Off by
+  /// default: it prints nothing. `@isset(x)`, `x ?? 'default'` and
   /// `x?.name` never throw.
   final bool strictVariables;
 
-  /// The text `'0'` is false in `@if` and the other conditions. On by
-  /// default. When false, `'0'` is true, like any text that is not
-  /// empty.
+  /// The text `'0'` is false in `@if` and the other conditions. Off by
+  /// default: `'0'` is true, like any text that is not empty.
   final bool stringZeroIsFalse;
 }

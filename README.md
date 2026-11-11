@@ -63,7 +63,7 @@ String html = View.render('emails/welcome', <String, dynamic>{'name': 'Ann'});
 <article>{{{ post.html }}}</article>
 ```
 
-`null` prints nothing. `true` prints `1`, `false` prints nothing, and `10.0` prints `10`. A variable that does not exist throws a `ViewException`. You can change this with the `bladeOutput` and `strictVariables` options. See [Strict options](#strict-options).
+`null` prints nothing. `true` prints `true`, `false` prints `false`, and `10.0` prints `10.0`. A variable that does not exist prints nothing. The `bladeOutput` and `strictVariables` options change this. See [Strict options](#strict-options).
 
 A comment is not in the output:
 
@@ -95,7 +95,7 @@ Lists, maps and text have `length`, `isEmpty` and `isNotEmpty`. Lists also have 
 Text has `toUpperCase()`, `toLowerCase()`, `trim()`, `contains()`, `startsWith()`, `endsWith()`, `split()`, `replaceAll()`, `substring()` and `indexOf()`.
 Numbers have `toStringAsFixed()`, `round()`, `floor()`, `ceil()` and `abs()`.
 
-In `@if` and `?:`, these values are false: `null`, `false`, `0`, `''`, the text `'0'`, an empty list and an empty map. The `stringZeroIsFalse` option controls `'0'`. See [Strict options](#strict-options).
+In `@if` and `?:`, these values are false: `null`, `false`, `0`, `''`, an empty list and an empty map. With the `stringZeroIsFalse` option, the text `'0'` is false too. See [Strict options](#strict-options).
 
 ## Conditions
 
@@ -223,7 +223,7 @@ With a space before the `(`, in the middle of a line, a tag is used only when it
 | Tag | What it does |
 | --- | --- |
 | `@isset(user.phone) ... @end` | shows when the value is not `null`. A field of `null` is not an error here. |
-| `@empty(items) ... @end` | shows when the value is false: `null`, `false`, `0`, `''`, `'0'`, an empty list or map |
+| `@empty(items) ... @end` | shows when the value is false: `null`, `false`, `0`, `''`, an empty list or map. With `stringZeroIsFalse`, `'0'` too. |
 | `@auth ... @end` | shows when the user is logged in (`req.auth`) |
 | `@guest ... @end` | shows when the user is not logged in |
 | `@env('local') ... @end` | shows when `APP_ENV` is this value. A list works too: `@env(['local', 'staging'])`. Case does not matter. |
@@ -579,26 +579,26 @@ You can add directives before or after `View.configure()`. The engine keeps them
 | `cache` | on, but off when `APP_ENV` is `development` or `local` | keep parsed templates in memory |
 | `globals` | `{}` | variables for every template |
 | `directives` | `{}` | your own tags, by name |
-| `strictVariables` | `true` | a variable that does not exist throws a `ViewException`. See [Strict options](#strict-options). |
-| `stringZeroIsFalse` | `true` | the text `'0'` is false in a condition |
-| `bladeOutput` | `true` | print `true` as `1`, `false` as nothing and `10.0` as `10` |
+| `strictVariables` | `false` | a variable that does not exist throws a `ViewException`. See [Strict options](#strict-options). |
+| `stringZeroIsFalse` | `false` | the text `'0'` is false in a condition |
+| `bladeOutput` | `false` | print `true` as `1`, `false` as nothing and `10.0` as `10` |
 | `bladeWarnings` | `true` | warn about Blade names that are not Dox tags. See [Coming from Blade](#coming-from-blade). |
 
 With the cache off, a changed template shows on the next request, with no restart.
 
 ## Strict options
 
-These three options are on by default. Each one can be turned off in `ViewConfig`:
+These three options are off by default. Turn each one on in `ViewConfig`:
 
 ```dart
 const ViewConfig(
-  strictVariables: false,
-  stringZeroIsFalse: false,
-  bladeOutput: false,
+  strictVariables: true,
+  stringZeroIsFalse: true,
+  bladeOutput: true,
 );
 ```
 
-**`strictVariables`**: a variable that does not exist throws a `ViewException`. The message has the name of the variable, the template and the line. So a typo like `{{ titel }}` shows as an error, not as an empty spot on the page. With `strictVariables: false`, a variable that does not exist prints nothing.
+**`strictVariables`**: a variable that does not exist throws a `ViewException`. The message has the name of the variable, the template and the line. So a typo like `{{ titel }}` shows as an error, not as an empty spot on the page. When it is off, a variable that does not exist prints nothing.
 
 A variable that is there with the value `null` is fine. These ways to read a variable that may not exist never throw:
 
@@ -611,9 +611,9 @@ A variable that is there with the value `null` is fine. These ways to read a var
 
 The rule covers the variable on the left of `??` and `?.`. In `{{ a ?? b ?? 'x' }}`, both `a` and `b` can be missing. `{{ user.name ?? 'Guest' }}` still throws when `user` does not exist: write `{{ user?.name ?? 'Guest' }}`.
 
-**`stringZeroIsFalse`**: the text `'0'` is false in `@if`, `@unless`, `@empty`, `?:`, `&&`, `||`, `!`, `@class`, `@checked`, `@selected`, `@disabled`, `@includeIf` and `@includeWhen`. Other text, like `'0.0'` or `'00'`, is still true. With `stringZeroIsFalse: false`, `'0'` is true, like any text that is not empty.
+**`stringZeroIsFalse`**: the text `'0'` is false in `@if`, `@unless`, `@empty`, `?:`, `&&`, `||`, `!`, `@class`, `@checked`, `@selected`, `@disabled`, `@includeIf` and `@includeWhen`. Other text, like `'0.0'` or `'00'`, is still true. When it is off, `'0'` is true, like any text that is not empty.
 
-**`bladeOutput`**: `{{ }}` and `{{{ }}}` print `true` as `1`, `false` as nothing, and a number with no fraction, like `10.0`, as `10`. The values of `@yield`, `@section` and `@method` are printed the same way. Joining text with `+` does not change: `{{ 'a' + true }}` is still `atrue`. With `bladeOutput: false`, `true` prints `true`, `false` prints `false`, and `10.0` prints `10.0`.
+**`bladeOutput`**: `{{ }}` and `{{{ }}}` print `true` as `1`, `false` as nothing, and a number with no fraction, like `10.0`, as `10`. The values of `@yield`, `@section` and `@method` are printed the same way. Joining text with `+` does not change: `{{ 'a' + true }}` is still `atrue`. When it is off, `true` prints `true`, `false` prints `false`, and `10.0` prints `10.0`.
 
 ## Coming from Blade
 

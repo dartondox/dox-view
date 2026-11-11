@@ -173,30 +173,30 @@ void main() {
     await File('${dir.path}/options.dox.html')
         .writeAsString("{{ on }}|@if('0') zero @end|{{ missing ?? 'none' }}");
     Map<String, dynamic> data = <String, dynamic>{'on': true};
-    // the defaults: Blade output, missing variables throw, '0' is false
-    expect(View.render('options', data), '1||none');
-    expect(() => View.render('options'), throwsA(isA<ViewException>()));
+    // the defaults: all three options are off
+    expect(View.render('options', data), 'true| zero |none');
+    expect(View.render('options'), '| zero |none');
     expect(View.engine.bladeWarnings, isTrue);
     View.configure(
       ViewConfig(
         path: dir.path,
         cache: false,
         bladeWarnings: false,
-        bladeOutput: false,
-        strictVariables: false,
-        stringZeroIsFalse: false,
+        bladeOutput: true,
+        strictVariables: true,
+        stringZeroIsFalse: true,
       ),
     );
     try {
-      expect(View.render('options', data), 'true| zero |none');
+      expect(View.render('options', data), '1||none');
       expect(View.engine.bladeWarnings, isFalse);
-      expect(View.render('options'), '| zero |none');
+      expect(() => View.render('options'), throwsA(isA<ViewException>()));
     } finally {
       View.configure(ViewConfig(path: dir.path, cache: false));
     }
   });
 
-  group('one option off at a time', () {
+  group('one option on at a time', () {
     tearDown(() {
       View.configure(ViewConfig(path: dir.path, cache: false));
     });
@@ -226,30 +226,30 @@ void main() {
           .writeAsString("{{ flag }}|@if('0') zero @end{{ missing }}");
     });
 
-    test('only bladeOutput off', () {
+    test('only bladeOutput on', () {
       check(
-        ViewConfig(path: dir.path, cache: false, bladeOutput: false),
-        out: 'true',
-        zero: '',
-        strict: true,
-      );
-    });
-
-    test('only strictVariables off', () {
-      check(
-        ViewConfig(path: dir.path, cache: false, strictVariables: false),
+        ViewConfig(path: dir.path, cache: false, bladeOutput: true),
         out: '1',
-        zero: '',
+        zero: ' zero ',
         strict: false,
       );
     });
 
-    test('only stringZeroIsFalse off', () {
+    test('only strictVariables on', () {
       check(
-        ViewConfig(path: dir.path, cache: false, stringZeroIsFalse: false),
-        out: '1',
+        ViewConfig(path: dir.path, cache: false, strictVariables: true),
+        out: 'true',
         zero: ' zero ',
         strict: true,
+      );
+    });
+
+    test('only stringZeroIsFalse on', () {
+      check(
+        ViewConfig(path: dir.path, cache: false, stringZeroIsFalse: true),
+        out: 'true',
+        zero: '',
+        strict: false,
       );
     });
   });
