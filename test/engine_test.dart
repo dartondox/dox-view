@@ -82,23 +82,37 @@ void main() {
       );
     });
 
-    test('null prints nothing, a missing variable is an error', () {
+    test('null and a missing variable print nothing', () {
       expect(
-        render('[{{ nothing }}]', <String, Object?>{'nothing': null}),
-        '[]',
+        render('[{{ nothing }}][{{ missing }}]', <String, Object?>{
+          'nothing': null,
+        }),
+        '[][]',
       );
-      expect(() => render('[{{ missing }}]'), throwsA(isA<ViewException>()));
     });
 
-    test('true prints 1, false prints nothing, 10.0 prints 10', () {
-      expect(
-        render('[{{ yes }}][{{ no }}][{{ ten }}]', <String, Object?>{
-          'yes': true,
-          'no': false,
-          'ten': 10.0,
-        }),
-        '[1][][10]',
+    test('with strictVariables, a missing variable is an error', () {
+      ViewEngine engine = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{'main': '[{{ missing }}]'}),
+        strictVariables: true,
       );
+      expect(() => engine.render('main'), throwsA(isA<ViewException>()));
+    });
+
+    test('true, false and 10.0 print as Dart prints them', () {
+      Map<String, Object?> data = <String, Object?>{
+        'yes': true,
+        'no': false,
+        'ten': 10.0,
+      };
+      const String source = '[{{ yes }}][{{ no }}][{{ ten }}]';
+      expect(render(source, data), '[true][false][10.0]');
+      ViewEngine blade = ViewEngine(
+        const MemoryTemplateLoader(<String, String>{'main': source}),
+        bladeOutput: true,
+      );
+      // with bladeOutput, true prints 1, false prints nothing, 10.0 prints 10
+      expect(blade.render('main', data), '[1][][10]');
     });
 
     test('comments and escaped tags', () {
@@ -132,7 +146,7 @@ void main() {
           '{{ 1 + 2 * 3 }} {{ (1 + 2) * 3 }} {{ 7 % 4 }} {{ 7 ~/ 2 }} '
           '{{ 2 > 1 && 1 >= 1 }} {{ !true || false }} {{ 1 === 1.0 }}',
         ),
-        '7 9 3 3 1  1',
+        '7 9 3 3 true false true',
       );
     });
 
@@ -156,7 +170,7 @@ void main() {
           '{{ items.contains(2) }}',
           data,
         ),
-        '5 DOX 1-2-3 9.50 2 1',
+        '5 DOX 1-2-3 9.50 2 true',
       );
     });
 
@@ -388,10 +402,15 @@ void main() {
 
     test('a component does not see the variables of the caller', () {
       // the component reads name, which only the caller has
+      Map<String, Object?> data = <String, Object?>{'name': 'leak'};
+      const String source = "@!component('components/form/input')";
+      expect(render(source, data, templates), '<input name="">');
+      ViewEngine strict = ViewEngine(
+        MemoryTemplateLoader(<String, String>{'main': source, ...templates}),
+        strictVariables: true,
+      );
       expect(
-        () => render("@!component('components/form/input')", <String, Object?>{
-          'name': 'leak',
-        }, templates),
+        () => strict.render('main', data),
         throwsA(
           isA<ViewException>().having(
             (ViewException e) => e.message,
