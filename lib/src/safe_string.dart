@@ -51,6 +51,8 @@ class SafeString {
 /// Only text, numbers and `true` are attributes; `true` prints the
 /// name alone. `null`, `false`, lists, maps and objects are left out.
 /// With [blade] (the `bladeOutput` option), `10.0` prints as `10`.
+/// [blade] is off when you make one by hand. The engine passes its own
+/// `bladeOutput` value for the `$attributes` of a component.
 class Attributes extends SafeString {
   Attributes(this.props, {this.blade = false}) : super(_render(props, blade));
 
