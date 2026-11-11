@@ -50,10 +50,12 @@ class SafeString {
 /// `class="btn" id="save"`. `{{ $attributes }}` prints them, escaped.
 /// Only text, numbers and `true` are attributes; `true` prints the
 /// name alone. `null`, `false`, lists, maps and objects are left out.
+/// With [blade] (the `bladeOutput` option), `10.0` prints as `10`.
 class Attributes extends SafeString {
-  Attributes(this.props) : super(_render(props));
+  Attributes(this.props, {this.blade = false}) : super(_render(props, blade));
 
   final Map<String, Object?> props;
+  final bool blade;
 
   /// `$attributes.type` reads a prop
   Map<String, Object?> toJson() => props;
@@ -75,7 +77,7 @@ class Attributes extends SafeString {
         merged[entry.key] = entry.value;
       }
     }
-    return SafeString(_render(merged));
+    return SafeString(_render(merged, blade));
   }
 
   /// `{{ $attributes.except(['variant']) }}`: the attributes without
@@ -91,12 +93,12 @@ class Attributes extends SafeString {
     return Attributes(<String, Object?>{
       for (MapEntry<String, Object?> entry in props.entries)
         if (!skip.contains(entry.key)) entry.key: entry.value,
-    });
+    }, blade: blade);
   }
 
   static final RegExp _name = RegExp(r'^[A-Za-z_:@][\w:.@-]*$');
 
-  static String _render(Map<String, Object?> attributes) {
+  static String _render(Map<String, Object?> attributes, bool blade) {
     List<String> out = <String>[];
     for (MapEntry<String, Object?> entry in attributes.entries) {
       Object? value = entry.value;
@@ -104,11 +106,18 @@ class Attributes extends SafeString {
       if (value == true) {
         out.add(entry.key);
       } else if (value is String || value is num || value is SafeString) {
-        out.add('${entry.key}="${escapeHtml('$value')}"');
+        String text = blade && value is double ? bladeDouble(value) : '$value';
+        out.add('${entry.key}="${escapeHtml(text)}"');
       }
     }
     return out.join(' ');
   }
+}
+
+/// [value] as Blade prints it: `10.0` is `10`, `0.5` stays `0.5`
+String bladeDouble(double value) {
+  String text = value.toString();
+  return text.endsWith('.0') ? text.substring(0, text.length - 2) : text;
 }
 
 /// [text] with `&`, `<`, `>`, `"` and `'` as HTML entities

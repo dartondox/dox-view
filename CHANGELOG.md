@@ -1,6 +1,7 @@
 ## Unreleased
 
 - Breaking: `{{ }}` now prints values like Blade. `true` prints `1`, `false` prints nothing, and `10.0` prints `10`. On 3.1.0 they printed `true`, `false` and `10.0`. To keep that output, set `bladeOutput: false`.
+- Breaking: with `bladeOutput`, a number in `$attributes` prints like `{{ }}`. `1.0` is `title="1"` and `0.5` stays `0.5`. On 3.1.0 it printed `title="1.0"`. Set `bladeOutput: false` to keep that.
 - Breaking: a variable that does not exist now throws a `ViewException`. On 3.1.0 it printed nothing. So a template that reads a variable the page does not pass now fails. Use `x ?? ''`, `x?.name` or `@isset(x)` for a variable that may be missing. Or set `strictVariables: false` to print nothing again.
 - Breaking: the text `'0'` is now false in `@if` and the other conditions. On 3.1.0 it was true. To keep that, set `stringZeroIsFalse: false`.
 - Breaking: `Scope.root` and a `Scope` with no parent now have `strictVariables` and `stringZeroIsFalse` on, the same as the engine.

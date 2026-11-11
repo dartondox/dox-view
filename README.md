@@ -352,7 +352,7 @@ A template in `resources/views/components/` is also a tag with its name. A `.` i
 
 This prints `<button class="btn btn-big" type="submit">`.
 
-Only text, numbers and `true` are attributes. `true` prints the name alone, like `hidden`. `null`, `false`, lists, maps and objects are left out. You can still read any prop, like `$attributes.type`.
+Only text, numbers and `true` are attributes. A number prints like `{{ }}`, so with `bladeOutput` `1.0` is `1`. `true` prints the name alone, like `hidden`. `null`, `false`, lists, maps and objects are left out. You can still read any prop, like `$attributes.type`.
 
 `$attributes.except([...])` leaves out props that are only for the logic of the component, like a `variant`. It can go before `merge()`:
 

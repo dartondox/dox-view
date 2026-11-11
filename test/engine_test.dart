@@ -649,6 +649,29 @@ void main() {
       );
     });
 
+    test('\$attributes prints numbers like {{ }} with bladeOutput', () {
+      const String source = '@!attrs({ a: 1.0, b: 0.5, c: 3, d: true })';
+      Map<String, String> others = <String, String>{
+        'components/attrs':
+            '<i {{ \$attributes }}|{{ \$attributes.merge({ e: 2.0 }) }}|'
+            '{{ \$attributes.except([\'d\']) }}></i>',
+      };
+      String run(bool blade) => ViewEngine(
+        MemoryTemplateLoader(<String, String>{'main': source, ...others}),
+        bladeOutput: blade,
+      ).render('main');
+      expect(
+        run(true),
+        '<i a="1" b="0.5" c="3" d|e="2" a="1" b="0.5" c="3" d|'
+        'a="1" b="0.5" c="3"></i>',
+      );
+      expect(
+        run(false),
+        '<i a="1.0" b="0.5" c="3" d|e="2.0" a="1.0" b="0.5" c="3" d|'
+        'a="1.0" b="0.5" c="3"></i>',
+      );
+    });
+
     test('\$slot and \$slots.main are empty text when the slot is empty', () {
       expect(
         render('@!button()', <String, Object?>{}, templates),

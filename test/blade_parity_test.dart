@@ -686,16 +686,13 @@ void main() {
       );
     });
 
-    test('on by default: a missing variable is an error', () {
+    test('on by default: a missing variable is an error with its name', () {
       expect(
         () => ViewEngine(
           const MemoryTemplateLoader(<String, String>{'main': '{{ missing }}'}),
         ).render('main'),
         Harness.throwsView('the variable "missing" is not defined'),
       );
-    });
-
-    test('default: a missing variable is an error with its name', () {
       for (String source in <String>[
         '\n{{ missing }}',
         '\n@if(missing) x @end',
