@@ -1,5 +1,6 @@
 ## Unreleased
 
+- Ships an AI agent skill (dox-view-guide). Install it in your app with `dart run skills@ get`.
 - Requires Dart 3.14 or newer.
 - New: with `bladeOutput`, a number in `$attributes` prints like `{{ }}`. `1.0` is `title="1"` and `0.5` stays `0.5`. With the option off, nothing changes: `1.0` is `title="1.0"`.
 - Fix: `@empty (none)` alone on its line threw `@empty has no @end`. Now a tag with a body and a space before the `(`, like `@isset (x)` or `@empty (x)`, is a tag only when its own `@end` comes after it, on any line. The `@end` of a block around it does not count. Else the text stays as it is. Templates that worked before still work the same.
