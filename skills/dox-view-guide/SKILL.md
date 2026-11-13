@@ -9,6 +9,8 @@ description: Use when you add or edit server-rendered HTML pages in a Dox (Dart)
 
 ## Install and set up
 
+Fast way: `dox add view`. It adds the package, `lib/providers/view_provider.dart`, `resources/views/` and a sample `welcome.dox.html`. It never overwrites a file. The steps below are the same by hand, with a config file for globals.
+
 1. Add the package:
 
 ```bash
