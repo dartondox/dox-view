@@ -1,6 +1,6 @@
 name: dox_view
 description: "A template engine for the Dox framework, like Edge.js: layouts with components and slots, @if, @each and escaped output in .dox.html files."
-version: 3.1.0
+version: 3.2.0
 repository: https://github.com/dartondox/dox-view
 homepage: https://dartondox.dev
 
@@ -8,10 +8,8 @@ environment:
   sdk: ^3.13.0
 
 dependencies:
-  # Raise to the dox_annotation release that has install.dart before
-  # releasing this package.
-  dox_annotation: ^3.1.0
-  dox_core: ^3.1.0
+  dox_annotation: ^3.2.0
+  dox_core: ^3.2.0
 
 dev_dependencies:
   lints: ^6.1.0

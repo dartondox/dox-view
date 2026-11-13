@@ -1,4 +1,4 @@
-## Unreleased
+## 3.2.0
 
 - Fix: `dox add view` now makes `resources/views/emails/` when the app has dox_mailer. Before, with `dox add mailer` run first, the folder was never made, because the mailer only makes it when dox_view is there.
 - New: `dox add view` (the `view:install` command). It adds the provider, `resources/views/` and a sample `welcome.dox.html`. It never overwrites a file. New dependency: `dox_annotation`.
