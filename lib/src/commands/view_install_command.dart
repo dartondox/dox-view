@@ -39,6 +39,11 @@ class ViewInstallCommand extends Command {
     installer.writeFile('lib/providers/view_provider.dart', provider);
     installer.makeFolder('resources/views');
     installer.writeFile('resources/views/welcome.dox.html', welcomeView);
+    // `dox add mailer` makes this folder only when dox_view is there, so
+    // with mailer added first, view makes it.
+    if (installer.hasDependency('dox_mailer')) {
+      installer.makeFolder('resources/views/emails');
+    }
 
     await installer.buildRunner();
     installer.printSummary(<String>[

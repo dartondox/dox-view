@@ -63,6 +63,26 @@ void main() {
     expect(read('resources/views/welcome.dox.html'), contains('{{ name }}'));
   });
 
+  test(
+    'makes resources/views/emails only when the app has dox_mailer',
+    () async {
+      await install(<String>[]);
+      expect(
+        Directory('${root.path}/resources/views/emails').existsSync(),
+        isFalse,
+      );
+      File('${root.path}/pubspec.yaml').writeAsStringSync(
+        'name: my_app\n\ndependencies:\n  dox_mailer: ^3.1.0\n',
+      );
+      await install(<String>[]);
+      expect(exitCode, 0);
+      expect(
+        Directory('${root.path}/resources/views/emails').existsSync(),
+        isTrue,
+      );
+    },
+  );
+
   test('a second run changes nothing, and own files stay', () async {
     await install(<String>[]);
     File('${root.path}/resources/views/welcome.dox.html')
