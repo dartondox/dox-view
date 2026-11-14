@@ -1,9 +1,17 @@
+import 'dart:math';
 import 'dart:io';
 
 import 'package:dox_core/dox_core.dart';
 import 'package:dox_core/testing.dart';
 import 'package:dox_view/dox_view.dart';
 import 'package:test/test.dart';
+
+/// A new key for each run. A fixed key in a public repo is a public key,
+/// and dox_core refuses public sample keys outside development and tests.
+final String _testKey = List<String>.generate(
+  32,
+  (int i) => Random.secure().nextInt(36).toRadixString(36),
+).join();
 
 class ViewRouter extends Router {
   @override
@@ -97,7 +105,7 @@ void main() {
     View.configure(ViewConfig(path: dir.path, cache: false));
     client = await DoxTestClient.start(
       AppConfig(
-        appKey: '4HyiSrq4N5Nfg6bOadIhbFEI8zbUkpxt',
+        appKey: _testKey,
         routers: <Router>[ViewRouter(), PlainRouter()],
       ),
     );
