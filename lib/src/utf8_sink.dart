@@ -9,14 +9,29 @@ class Utf8Sink implements StringSink {
   Uint8List _buffer;
   int _length = 0;
 
-  /// the number of bytes written
-  int get length => _length;
+  /// a high surrogate at the end of the last write. The next write can
+  /// start with its low surrogate: the text of a page is one string, so
+  /// the two make one character, as in `utf8.encode` of the whole page.
+  int _high = -1;
 
-  /// the bytes written so far, in a list of their own
-  Uint8List takeBytes() => Uint8List.sublistView(_buffer, 0, _length);
+  /// the size of the buffer
+  int get capacity => _buffer.length;
+
+  /// a copy of the bytes written so far
+  Uint8List takeBytes() {
+    _flushHigh();
+    return Uint8List.fromList(Uint8List.sublistView(_buffer, 0, _length));
+  }
+
+  /// start again, with the same buffer
+  void reset() {
+    _length = 0;
+    _high = -1;
+  }
 
   /// add [bytes] as they are
   void addBytes(Uint8List bytes) {
+    _flushHigh();
     int count = bytes.length;
     _ensure(count);
     _buffer.setRange(_length, _length + count, bytes);
@@ -27,14 +42,25 @@ class Utf8Sink implements StringSink {
   void write(Object? object) {
     String text = object is String ? object : '$object';
     int count = text.length;
-    // a code unit is at most 3 bytes
-    _ensure(count * 3);
+    if (count == 0) return;
+    // a code unit is at most 3 bytes, and a pair from the last write 4
+    _ensure(count * 3 + 4);
     Uint8List out = _buffer;
     int at = _length;
-    for (int i = 0; i < count; i++) {
+    int i = _joinHigh(text);
+    if (i < 0) {
+      at = _pair(out, at, _high, text.codeUnitAt(0));
+      i = 1;
+    } else {
+      at = _flushHighAt(out, at);
+    }
+    _high = -1;
+    for (; i < count; i++) {
       int unit = text.codeUnitAt(i);
       if (unit < 0x80) {
         out[at++] = unit;
+      } else if (i == count - 1 && unit >= 0xD800 && unit <= 0xDBFF) {
+        _high = unit;
       } else {
         at = _multi(out, at, text, unit, i);
         if (_isPair(text, unit, i)) i++;
@@ -47,15 +73,26 @@ class Utf8Sink implements StringSink {
   /// `escapeHtml`
   void writeEscaped(String text) {
     int count = text.length;
+    if (count == 0) return;
     // `&quot;` is the longest: 6 bytes for one code unit
-    _ensure(count * 6);
+    _ensure(count * 6 + 4);
     Uint8List out = _buffer;
     int at = _length;
-    for (int i = 0; i < count; i++) {
+    int i = _joinHigh(text);
+    if (i < 0) {
+      at = _pair(out, at, _high, text.codeUnitAt(0));
+      i = 1;
+    } else {
+      at = _flushHighAt(out, at);
+    }
+    _high = -1;
+    for (; i < count; i++) {
       int unit = text.codeUnitAt(i);
       if (unit > 0x3E) {
         if (unit < 0x80) {
           out[at++] = unit;
+        } else if (i == count - 1 && unit >= 0xD800 && unit <= 0xDBFF) {
+          _high = unit;
         } else {
           at = _multi(out, at, text, unit, i);
           if (_isPair(text, unit, i)) i++;
@@ -118,6 +155,36 @@ class Utf8Sink implements StringSink {
   @override
   void writeCharCode(int charCode) => write(String.fromCharCode(charCode));
 
+  /// -1 when [text] starts with the low surrogate of [_high], else 0
+  int _joinHigh(String text) {
+    return _high >= 0 && _isLow(text.codeUnitAt(0)) ? -1 : 0;
+  }
+
+  /// writes a [_high] with no pair as U+FFFD
+  void _flushHigh() {
+    if (_high < 0) return;
+    _ensure(3);
+    _length = _flushHighAt(_buffer, _length);
+  }
+
+  int _flushHighAt(Uint8List out, int at) {
+    if (_high < 0) return at;
+    _high = -1;
+    out[at++] = 0xEF;
+    out[at++] = 0xBF;
+    out[at++] = 0xBD;
+    return at;
+  }
+
+  static int _pair(Uint8List out, int at, int high, int low) {
+    int code = 0x10000 + ((high - 0xD800) << 10) + (low - 0xDC00);
+    out[at++] = 0xF0 | (code >> 18);
+    out[at++] = 0x80 | ((code >> 12) & 0x3F);
+    out[at++] = 0x80 | ((code >> 6) & 0x3F);
+    out[at++] = 0x80 | (code & 0x3F);
+    return at;
+  }
+
   void _ensure(int more) {
     int need = _length + more;
     if (need <= _buffer.length) return;
@@ -140,7 +207,7 @@ class Utf8Sink implements StringSink {
 
   /// writes the non-ASCII [unit] at [i]. A lone surrogate is U+FFFD, as
   /// `utf8.encode` writes it.
-  static int _multi(Uint8List out, int at, String text, int unit, int i) {
+  int _multi(Uint8List out, int at, String text, int unit, int i) {
     if (unit < 0x800) {
       out[at++] = 0xC0 | (unit >> 6);
       out[at++] = 0x80 | (unit & 0x3F);
@@ -153,13 +220,7 @@ class Utf8Sink implements StringSink {
         out[at++] = 0xBD;
         return at;
       }
-      int code =
-          0x10000 + ((unit - 0xD800) << 10) + (text.codeUnitAt(i + 1) - 0xDC00);
-      out[at++] = 0xF0 | (code >> 18);
-      out[at++] = 0x80 | ((code >> 12) & 0x3F);
-      out[at++] = 0x80 | ((code >> 6) & 0x3F);
-      out[at++] = 0x80 | (code & 0x3F);
-      return at;
+      return _pair(out, at, unit, text.codeUnitAt(i + 1));
     }
     out[at++] = 0xE0 | (unit >> 12);
     out[at++] = 0x80 | ((unit >> 6) & 0x3F);

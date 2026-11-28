@@ -139,19 +139,28 @@ class ViewEngine {
     Map<String, Object?> data = const <String, Object?>{},
     Map<String, Object?> shared = const <String, Object?>{},
   ]) {
-    Utf8Sink out = Utf8Sink(_lastSize);
-    RenderContext ctx = _render(name, data, shared, out);
-    Uint8List bytes = out.takeBytes();
-    _lastSize = bytes.length;
-    // `@stack` marks are filled in the text. Rare, so this path can be
-    // slow.
-    if (!ctx.hasStacks) return bytes;
-    return utf8.encode(ctx.finish(utf8.decode(bytes)));
+    // one buffer for the renders of this engine. A render inside a
+    // render (eg. in a directive) gets a new one.
+    Utf8Sink out = _spare ?? Utf8Sink(4096);
+    _spare = null;
+    try {
+      RenderContext ctx = _render(name, data, shared, out);
+      Uint8List bytes = out.takeBytes();
+      // `@stack` marks are filled in the text. Rare, so this path can be
+      // slow.
+      if (!ctx.hasStacks) return bytes;
+      return utf8.encode(ctx.finish(utf8.decode(bytes)));
+    } finally {
+      out.reset();
+      // ponytail: a buffer past 1 MB is dropped, so one huge page does not
+      // keep its memory
+      if (out.capacity <= _spareLimit) _spare = out;
+    }
   }
 
-  /// the size of the last page, so the next one starts with a big enough
-  /// buffer
-  int _lastSize = 1024;
+  static const int _spareLimit = 1 << 20;
+
+  Utf8Sink? _spare;
 
   RenderContext _render(
     String name,

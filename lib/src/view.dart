@@ -26,11 +26,7 @@ DoxResponse view(
   String name, [
   Map<String, dynamic> data = const <String, dynamic>{},
 ]) {
-  Uint8List html = View.engine.renderBytes(
-    name,
-    data,
-    View.requestData(req),
-  );
+  Uint8List html = View.engine.renderBytes(name, data, View.requestData(req));
   // the bytes go out as they are. `getContent()` still gives the text.
   return response().contentBytes(html).contentType(ContentType.html);
 }

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dox_view/dox_view.dart';
 import 'package:test/test.dart';
@@ -68,6 +69,17 @@ String render(
 /// [ViewEngine.renderBytes]
 bool _bytes = false;
 
+/// renders the template `inner` to bytes, inside the render of a page
+class _Inner implements ViewDirective {
+  _Inner(this.engine);
+
+  final ViewEngine Function() engine;
+
+  @override
+  Object? render(List<Object?> args, Scope scope) =>
+      utf8.decode(engine().renderBytes('inner'));
+}
+
 /// keeps the scope of each call, to read it after the render
 class Keep implements ViewDirective {
   final List<Scope> scopes = <Scope>[];
@@ -114,6 +126,60 @@ void _byteTests() {
         reason: text,
       );
     }
+  });
+
+  test('a surrogate pair split between two outputs is one character', () {
+    Map<String, String> templates = <String, String>{
+      'out': '{{ a }}{{ b }}',
+      'raw': '{{{ a }}}{{{ b }}}',
+      'empty': '{{ a }}{{ e }}{{ b }}',
+      'text': '{{ a }}\uDE00 and x\uD83D{{ b }}',
+      'lone': '{{ a }}x{{ b }}|{{ a }}',
+      'end': 'x{{ a }}',
+    };
+    Map<String, Object?> data = <String, Object?>{
+      'a': '\uD83D',
+      'b': '\uDE00',
+      'e': '',
+    };
+    ViewEngine engine = ViewEngine(MemoryTemplateLoader(templates));
+    for (String name in templates.keys) {
+      expect(
+        engine.renderBytes(name, data),
+        utf8.encode(engine.render(name, data)),
+        reason: name,
+      );
+    }
+    expect(utf8.decode(engine.renderBytes('out', data)), '\u{1F600}');
+  });
+
+  test('a small page after a huge page has a small buffer', () {
+    ViewEngine engine = ViewEngine(
+      MemoryTemplateLoader(<String, String>{
+        'big': '{{ text }}',
+        'small': 'hi',
+      }),
+    );
+    Uint8List big = engine.renderBytes('big', <String, Object?>{
+      'text': 'x' * 3000000,
+    });
+    expect(big.length, 3000000);
+    expect(big.buffer.lengthInBytes, 3000000);
+    Uint8List small = engine.renderBytes('small');
+    expect(small, utf8.encode('hi'));
+    expect(small.buffer.lengthInBytes, 2);
+  });
+
+  test('a render inside a render gets its own buffer', () {
+    late ViewEngine engine;
+    engine = ViewEngine(
+      MemoryTemplateLoader(<String, String>{
+        'outer': 'a @inner(1) b',
+        'inner': 'INNER',
+      }),
+      directives: <String, ViewDirective>{'inner': _Inner(() => engine)},
+    );
+    expect(utf8.decode(engine.renderBytes('outer')), 'a INNER b');
   });
 
   test('a big page grows the buffer', () {

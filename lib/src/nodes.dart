@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 import 'dart:typed_data';
 
-
 import 'expression.dart';
 import 'safe_string.dart';
 import 'scope.dart';
@@ -197,13 +196,24 @@ class TextNode extends Node {
 
   final String text;
 
-  /// [text] as UTF-8, made the first time a page renders to bytes
-  late final Uint8List bytes = utf8.encode(text);
+  /// [text] as UTF-8, made the first time a page renders to bytes. Null
+  /// when the text starts or ends with half of a surrogate pair: the
+  /// text next to it can hold the other half.
+  late final Uint8List? bytes = _edgeSurrogate(text) ? null : utf8.encode(text);
+
+  static bool _edgeSurrogate(String text) {
+    if (text.isEmpty) return false;
+    int first = text.codeUnitAt(0);
+    int last = text.codeUnitAt(text.length - 1);
+    return (first >= 0xDC00 && first <= 0xDFFF) ||
+        (last >= 0xD800 && last <= 0xDBFF);
+  }
 
   @override
   void render(RenderContext ctx, Scope scope, StringSink out) {
-    if (out is Utf8Sink) {
-      out.addBytes(bytes);
+    Uint8List? bytes;
+    if (out is Utf8Sink && (bytes = this.bytes) != null) {
+      out.addBytes(bytes!);
     } else {
       out.write(text);
     }
