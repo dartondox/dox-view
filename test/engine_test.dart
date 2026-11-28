@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dox_view/dox_view.dart';
 import 'package:test/test.dart';
 
@@ -58,11 +60,108 @@ String render(
   ViewEngine engine = ViewEngine(
     MemoryTemplateLoader(<String, String>{'main': source, ...others}),
   );
-  return engine.render('main', data);
+  if (!_bytes) return engine.render('main', data);
+  return utf8.decode(engine.renderBytes('main', data));
+}
+
+/// every test runs with [ViewEngine.render] and with
+/// [ViewEngine.renderBytes]
+bool _bytes = false;
+
+/// keeps the scope of each call, to read it after the render
+class Keep implements ViewDirective {
+  final List<Scope> scopes = <Scope>[];
+
+  @override
+  Object? render(List<Object?> args, Scope scope) {
+    scopes.add(scope);
+    return null;
+  }
 }
 
 void main() {
+  group('render', () {
+    setUp(() => _bytes = false);
+    _tests();
+  });
+  group('renderBytes', () {
+    setUp(() => _bytes = true);
+    _tests();
+  });
+  group('Utf8Sink and renderBytes', _byteTests);
+}
+
+void _byteTests() {
+  test('the same bytes as utf8.encode, also for lone surrogates', () {
+    List<String> texts = <String>[
+      '',
+      'plain',
+      '<a href="x">Tom & \'Ann\'</a>',
+      'caf\u00E9 \u2014 \u65E5\u672C \u{1F600}',
+      'lone \uD800 high, lone \uDC00 low, at the end \uD83D',
+      '\uDE00\uD83D wrong order',
+    ];
+    for (String text in texts) {
+      ViewEngine engine = ViewEngine(
+        MemoryTemplateLoader(<String, String>{
+          'main': '{{ text }}|{{{ text }}}|$text',
+        }),
+      );
+      Map<String, Object?> data = <String, Object?>{'text': text};
+      expect(
+        engine.renderBytes('main', data),
+        utf8.encode(engine.render('main', data)),
+        reason: text,
+      );
+    }
+  });
+
+  test('a big page grows the buffer', () {
+    ViewEngine engine = ViewEngine(
+      MemoryTemplateLoader(<String, String>{
+        'main': '@each(n in nums){{ n }} \u2014 &amp; @end',
+      }),
+    );
+    Map<String, Object?> data = <String, Object?>{
+      'nums': List<int>.generate(5000, (int i) => i),
+    };
+    expect(
+      engine.renderBytes('main', data),
+      utf8.encode(engine.render('main', data)),
+    );
+  });
+
+  test('@stack and @push work in renderBytes', () {
+    ViewEngine engine = ViewEngine(
+      MemoryTemplateLoader(<String, String>{
+        'main': "<head>@stack('js')</head>@push('js')<s>\u2014</s>@end",
+      }),
+    );
+    expect(utf8.decode(engine.renderBytes('main')), engine.render('main'));
+    expect(engine.render('main'), '<head><s>\u2014</s></head>');
+  });
+
+  test('an error in renderBytes is the same error as in render', () {
+    ViewEngine engine = ViewEngine(
+      MemoryTemplateLoader(<String, String>{'main': '{{ a.b( }}'}),
+    );
+    expect(() => engine.renderBytes('main'), throwsA(isA<ViewException>()));
+  });
+}
+
+void _tests() {
   group('output', () {
+    test('escapeHtml: every entity, text around it, and plain text', () {
+      expect(escapeHtml(''), '');
+      expect(escapeHtml('plain — ü 日本'), 'plain — ü 日本');
+      expect(escapeHtml('&<>"\''), '&amp;&lt;&gt;&quot;&#39;');
+      expect(
+        escapeHtml('a & b — "c" <d>'),
+        'a &amp; b — &quot;c&quot; &lt;d&gt;',
+      );
+      expect(escapeHtml('x?@[`'), 'x?@[`');
+    });
+
     test('escapes {{ }}', () {
       expect(
         render('<p>{{ text }}</p>', <String, Object?>{
@@ -227,6 +326,78 @@ void main() {
   });
 
   group('@each', () {
+    test('a @let in one round is gone in the next round', () {
+      expect(
+        render(
+          '@each(n in nums)[{{ seen ?? "-" }}]@let(seen = n)@end',
+          <String, Object?>{
+            'nums': <int>[1, 2, 3],
+          },
+        ),
+        '[-][-][-]',
+      );
+    });
+
+    test('a directive that keeps the scope sees its own round', () {
+      Keep keep = Keep();
+      ViewEngine engine = ViewEngine(
+        MemoryTemplateLoader(<String, String>{
+          'main': '@each((n, i) in nums)@keep()@end',
+        }),
+        directives: <String, ViewDirective>{'keep': keep},
+      );
+      engine.render('main', <String, Object?>{
+        'nums': <String>['a', 'b'],
+      });
+      expect(
+        <Object?>[for (Scope scope in keep.scopes) scope.lookup('n')],
+        <Object?>['a', 'b'],
+      );
+      expect(keep.scopes.first.vars.keys, <String>['n', 'i', r'$loop']);
+      expect(keep.scopes.last.lookup('i'), 1);
+      expect(keep.scopes.first.has('nums'), isTrue);
+      expect(keep.scopes.first.has('nope'), isFalse);
+    });
+
+    test('the item and the key with the same name: the key wins', () {
+      expect(
+        render('@each((x, x) in items){{ x }}@end', <String, Object?>{
+          'items': <String>['a', 'b'],
+        }),
+        '01',
+      );
+    });
+
+    test(r'a nested loop reads the outer item and $loop.parent', () {
+      expect(
+        render(
+          '@each(a in outer)@each(b in inner)'
+          r'{{ a }}{{ b }}{{ $loop.parent.index }} @end@end',
+          <String, Object?>{
+            'outer': <String>['x', 'y'],
+            'inner': <int>[1, 2],
+          },
+        ),
+        'x10 x20 y11 y21 ',
+      );
+    });
+
+    test('a lazy iterable runs one time', () {
+      int runs = 0;
+      Iterable<int> items = <int>[1, 2].map((int n) {
+        runs++;
+        return n;
+      });
+      expect(
+        render(
+          r'@each(n in items){{ n }}/{{ $loop.count }} @end',
+          <String, Object?>{'items': items},
+        ),
+        '1/2 2/2 ',
+      );
+      expect(runs, 2);
+    });
+
     test('a list with index and \$loop', () {
       expect(
         render(

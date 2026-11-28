@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dox_core/dox_core.dart';
 
@@ -25,8 +26,13 @@ DoxResponse view(
   String name, [
   Map<String, dynamic> data = const <String, dynamic>{},
 ]) {
-  String html = View.engine.render(name, data, View.requestData(req));
-  return response(html).contentType(ContentType.html);
+  Uint8List html = View.engine.renderBytes(
+    name,
+    data,
+    View.requestData(req),
+  );
+  // the bytes go out as they are. `getContent()` still gives the text.
+  return response().contentBytes(html).contentType(ContentType.html);
 }
 
 /// The template engine of the app. `ViewProvider` sets it up.
@@ -71,6 +77,14 @@ class View {
     Map<String, dynamic> data = const <String, dynamic>{},
   ]) {
     return engine.render(name, data, _errors(const <String, Object?>{}));
+  }
+
+  /// [render] as UTF-8 bytes, the same bytes as `utf8.encode` of it
+  static Uint8List renderBytes(
+    String name, [
+    Map<String, dynamic> data = const <String, dynamic>{},
+  ]) {
+    return engine.renderBytes(name, data, _errors(const <String, Object?>{}));
   }
 
   /// `errors` is always there, so `{{ errors.email }}` prints nothing

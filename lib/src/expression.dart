@@ -349,7 +349,8 @@ Map<Object?, Object?>? _asMap(Object? target) {
 Object? readProperty(Object? target, String name) {
   Map<Object?, Object?>? map = _asMap(target);
   if (map != null) {
-    if (map.containsKey(name)) return map[name];
+    Object? value = map[name];
+    if (value != null || map.containsKey(name)) return value;
     return switch (name) {
       'length' => map.length,
       'isEmpty' => map.isEmpty,

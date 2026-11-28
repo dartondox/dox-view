@@ -124,26 +124,50 @@ String bladeDouble(double value) {
 
 /// [text] with `&`, `<`, `>`, `"` and `'` as HTML entities
 String escapeHtml(String text) {
-  StringBuffer? out;
-  int start = 0;
+  // most text has nothing to escape: no copy
+  if (!needsEscape(text)) return text;
+  StringBuffer out = StringBuffer();
+  writeEscapedHtml(out, text);
+  return out.toString();
+}
+
+/// true when [text] has a character that [escapeHtml] changes
+bool needsEscape(String text) {
   for (int i = 0; i < text.length; i++) {
-    String? entity = switch (text.codeUnitAt(i)) {
-      0x26 => '&amp;',
-      0x3C => '&lt;',
-      0x3E => '&gt;',
-      0x22 => '&quot;',
-      0x27 => '&#39;',
-      _ => null,
-    };
+    if (_entity(text.codeUnitAt(i)) != null) return true;
+  }
+  return false;
+}
+
+/// writes [text] to [out] as [escapeHtml] gives it, with no new string
+/// for the whole text. For internal use.
+void writeEscapedHtml(StringSink out, String text) {
+  int start = 0;
+  int length = text.length;
+  for (int i = 0; i < length; i++) {
+    String? entity = _entity(text.codeUnitAt(i));
     if (entity == null) continue;
-    out ??= StringBuffer();
-    out
-      ..write(text.substring(start, i))
-      ..write(entity);
+    if (i > start) out.write(text.substring(start, i));
+    out.write(entity);
     start = i + 1;
   }
-  // most text has nothing to escape: no copy
-  if (out == null) return text;
-  out.write(text.substring(start));
-  return out.toString();
+  if (start == 0) {
+    out.write(text);
+  } else if (start < length) {
+    out.write(text.substring(start));
+  }
+}
+
+/// the entity of the character [unit], null when it stays
+String? _entity(int unit) {
+  // all five are below `?` (0x3F): most characters skip the checks
+  if (unit > 0x3E) return null;
+  return switch (unit) {
+    0x26 => '&amp;',
+    0x3C => '&lt;',
+    0x3E => '&gt;',
+    0x22 => '&quot;',
+    0x27 => '&#39;',
+    _ => null,
+  };
 }

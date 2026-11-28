@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'expression.dart' show jsonCache;
 import 'nodes.dart';
@@ -6,6 +8,7 @@ import 'safe_string.dart';
 import 'scope.dart';
 import 'template_loader.dart';
 import 'template_parser.dart';
+import 'utf8_sink.dart';
 import 'view_directive.dart';
 import 'view_exception.dart';
 
@@ -124,6 +127,38 @@ class ViewEngine {
     Map<String, Object?> shared = const <String, Object?>{},
   ]) {
     StringBuffer out = StringBuffer();
+    RenderContext ctx = _render(name, data, shared, out);
+    return ctx.finish(out.toString());
+  }
+
+  /// [render] as UTF-8 bytes: the same bytes as `utf8.encode(render(...))`.
+  /// The text is escaped and encoded in one pass, so a page is faster
+  /// than [render] and an encode.
+  Uint8List renderBytes(
+    String name, [
+    Map<String, Object?> data = const <String, Object?>{},
+    Map<String, Object?> shared = const <String, Object?>{},
+  ]) {
+    Utf8Sink out = Utf8Sink(_lastSize);
+    RenderContext ctx = _render(name, data, shared, out);
+    Uint8List bytes = out.takeBytes();
+    _lastSize = bytes.length;
+    // `@stack` marks are filled in the text. Rare, so this path can be
+    // slow.
+    if (!ctx.hasStacks) return bytes;
+    return utf8.encode(ctx.finish(utf8.decode(bytes)));
+  }
+
+  /// the size of the last page, so the next one starts with a big enough
+  /// buffer
+  int _lastSize = 1024;
+
+  RenderContext _render(
+    String name,
+    Map<String, Object?> data,
+    Map<String, Object?> shared,
+    StringSink out,
+  ) {
     Scope sharedScope = shared.isEmpty ? globals : Scope(shared, globals);
     // a new toJson() cache for this render; keep the outer one for a
     // render inside a render
@@ -140,7 +175,7 @@ class ViewEngine {
     } finally {
       jsonCache = outer;
     }
-    return ctx.finish(out.toString());
+    return ctx;
   }
 
   /// the parsed template [name]

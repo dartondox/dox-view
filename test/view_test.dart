@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math';
 import 'dart:io';
 
@@ -41,11 +42,24 @@ class PlainRouter extends Router {
   @override
   void register() {
     Route.get('/plain', (DoxRequest req) => view(req, 'errors'));
+    Route.get('/footer', <dynamic>[
+      _footer,
+      (DoxRequest req) => view(req, 'users/show', <String, dynamic>{
+        'name': 'caf\u00E9 & \u{1F600}',
+      }),
+    ]);
     Route.get('/auth', (DoxRequest req) {
       if (req.uri.queryParameters.containsKey('in')) req.auth = LoggedIn();
       return view(req, 'auth');
     });
   }
+}
+
+/// a middleware that reads the page as text and adds to it
+Future<DoxResponse> _footer(DoxRequest req, Next next) async {
+  DoxResponse res = await next();
+  Object? html = res.getContent();
+  return res.content('$html<footer>${html is String}</footer>');
 }
 
 class LoggedIn implements IAuth {
@@ -294,6 +308,25 @@ void main() {
     } finally {
       View.engine.globals.vars.remove('errors');
     }
+  });
+
+  test('a middleware reads the page of view() as a String', () async {
+    TestResponse res = await client.get('/footer');
+    res.expectStatus(200);
+    expect(res.body, contains('<h1>caf\u00E9 &amp; \u{1F600}</h1>'));
+    expect(res.body, endsWith('<footer>true</footer>'));
+    expect(res.header('content-type'), contains('text/html'));
+  });
+
+  test('View.renderBytes gives the bytes of View.render', () {
+    Map<String, dynamic> data = <String, dynamic>{
+      'name': '\u2014 & \u{1F600}',
+      'request': <String, String>{'path': '/'},
+    };
+    expect(
+      View.renderBytes('users/show', data),
+      utf8.encode(View.render('users/show', data)),
+    );
   });
 
   test('View.render gives a string, eg. for mail', () {
