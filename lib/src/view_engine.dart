@@ -145,11 +145,11 @@ class ViewEngine {
     _spare = null;
     try {
       RenderContext ctx = _render(name, data, shared, out);
-      Uint8List bytes = out.takeBytes();
-      // `@stack` marks are filled in the text. Rare, so this path can be
-      // slow.
-      if (!ctx.hasStacks) return bytes;
-      return utf8.encode(ctx.finish(utf8.decode(bytes)));
+      // `@stack` marks are filled in the text, and half of a surrogate
+      // pair next to a mark gets its pair there. Rare, so this path can
+      // be slow.
+      if (ctx.hasStacks) return utf8.encode(ctx.finish(out.takeText()));
+      return out.takeBytes();
     } finally {
       out.reset();
       // ponytail: a buffer past 1 MB is dropped, so one huge page does not

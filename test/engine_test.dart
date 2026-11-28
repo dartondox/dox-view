@@ -153,6 +153,32 @@ void _byteTests() {
     expect(utf8.decode(engine.renderBytes('out', data)), '\u{1F600}');
   });
 
+  test('an empty text node and a @stack do not split a pair', () {
+    Map<String, String> templates = <String, String>{
+      'include': "{{ a }}@include('inner'){{ b }}",
+      'inner': '@let(x = 1)\n',
+      'stack': "{{ a }}@stack('p'){{ b }}",
+      'push': "{{ a }}@stack('p')@push('p'){{ b }} @end",
+      'lone': "{{ c }}@stack('p')|{{ a }}x{{ c }}{{ a }}@stack('p'){{ b }}",
+    };
+    Map<String, Object?> data = <String, Object?>{
+      'a': '\uD83D',
+      'b': '\uDE00',
+      'c': 'x\uDC00\uD800',
+    };
+    for (String name in <String>['include', 'stack', 'push', 'lone']) {
+      ViewEngine engine = ViewEngine(MemoryTemplateLoader(templates));
+      // the first render finds the @stack, the second takes the text path
+      for (int round = 0; round < 2; round++) {
+        expect(
+          engine.renderBytes(name, data),
+          utf8.encode(engine.render(name, data)),
+          reason: '$name $round',
+        );
+      }
+    }
+  });
+
   test('a small page after a huge page has a small buffer', () {
     ViewEngine engine = ViewEngine(
       MemoryTemplateLoader(<String, String>{

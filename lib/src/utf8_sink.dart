@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 /// Writes text as UTF-8 bytes, with the same bytes as `utf8.encode`.
@@ -14,25 +15,70 @@ class Utf8Sink implements StringSink {
   /// the two make one character, as in `utf8.encode` of the whole page.
   int _high = -1;
 
+  /// true when the text had a surrogate with no pair. The buffer holds
+  /// it in the 3-byte form of its code unit (`ED A0..BF ..`), so
+  /// [takeText] can give the exact text back. [takeBytes] gives U+FFFD
+  /// for it, as `utf8.encode` writes it.
+  bool _lone = false;
+
   /// the size of the buffer
   int get capacity => _buffer.length;
 
-  /// a copy of the bytes written so far
+  /// a copy of the bytes written so far: the same bytes as `utf8.encode`
+  /// of the text
   Uint8List takeBytes() {
     _flushHigh();
-    return Uint8List.fromList(Uint8List.sublistView(_buffer, 0, _length));
+    Uint8List bytes = Uint8List.fromList(
+      Uint8List.sublistView(_buffer, 0, _length),
+    );
+    if (!_lone) return bytes;
+    // valid UTF-8 never has `ED A0..BF`: only a lone surrogate makes it.
+    // U+FFFD (`EF BF BD`) has the same length.
+    for (int i = 0; i + 2 < bytes.length; i++) {
+      if (bytes[i] == 0xED && bytes[i + 1] >= 0xA0) {
+        bytes[i] = 0xEF;
+        bytes[i + 1] = 0xBF;
+        bytes[i + 2] = 0xBD;
+        i += 2;
+      }
+    }
+    return bytes;
+  }
+
+  /// the text written so far, with each lone surrogate as it was
+  String takeText() {
+    _flushHigh();
+    Uint8List bytes = Uint8List.sublistView(_buffer, 0, _length);
+    if (!_lone) return utf8.decode(bytes);
+    StringBuffer text = StringBuffer();
+    int start = 0;
+    for (int i = 0; i + 2 < bytes.length; i++) {
+      if (bytes[i] != 0xED || bytes[i + 1] < 0xA0) continue;
+      text
+        ..write(utf8.decode(Uint8List.sublistView(bytes, start, i)))
+        ..writeCharCode(
+          0xD000 | ((bytes[i + 1] & 0x3F) << 6) | (bytes[i + 2] & 0x3F),
+        );
+      i += 2;
+      start = i + 1;
+    }
+    text.write(utf8.decode(Uint8List.sublistView(bytes, start)));
+    return text.toString();
   }
 
   /// start again, with the same buffer
   void reset() {
     _length = 0;
     _high = -1;
+    _lone = false;
   }
 
   /// add [bytes] as they are
   void addBytes(Uint8List bytes) {
-    _flushHigh();
     int count = bytes.length;
+    // no bytes: a high surrogate before can still get its pair after
+    if (count == 0) return;
+    _flushHigh();
     _ensure(count);
     _buffer.setRange(_length, _length + count, bytes);
     _length += count;
@@ -169,10 +215,17 @@ class Utf8Sink implements StringSink {
 
   int _flushHighAt(Uint8List out, int at) {
     if (_high < 0) return at;
+    int unit = _high;
     _high = -1;
-    out[at++] = 0xEF;
-    out[at++] = 0xBF;
-    out[at++] = 0xBD;
+    return _loneAt(out, at, unit);
+  }
+
+  /// a lone surrogate, in the 3-byte form of its code unit. See [_lone].
+  int _loneAt(Uint8List out, int at, int unit) {
+    _lone = true;
+    out[at++] = 0xED;
+    out[at++] = 0x80 | ((unit >> 6) & 0x3F);
+    out[at++] = 0x80 | (unit & 0x3F);
     return at;
   }
 
@@ -214,12 +267,7 @@ class Utf8Sink implements StringSink {
       return at;
     }
     if (unit >= 0xD800 && unit <= 0xDFFF) {
-      if (!_isPair(text, unit, i)) {
-        out[at++] = 0xEF;
-        out[at++] = 0xBF;
-        out[at++] = 0xBD;
-        return at;
-      }
+      if (!_isPair(text, unit, i)) return _loneAt(out, at, unit);
       return _pair(out, at, unit, text.codeUnitAt(i + 1));
     }
     out[at++] = 0xE0 | (unit >> 12);
