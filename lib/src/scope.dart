@@ -25,21 +25,15 @@ class Scope {
 
   /// the value of [name], null when no scope has it
   Object? lookup(String name) {
-    Scope? scope = this;
-    while (scope != null) {
-      Object? value = scope.vars[name];
-      if (value != null || scope.vars.containsKey(name)) return value;
-      scope = scope.parent;
-    }
-    return null;
+    Map<String, Object?> vars = this.vars;
+    Object? value = vars[name];
+    if (value != null || vars.containsKey(name)) return value;
+    return parent?.lookup(name);
   }
 
   /// true when this scope or a parent has [name], also with a null value
   bool has(String name) {
-    for (Scope? scope = this; scope != null; scope = scope.parent) {
-      if (scope.vars.containsKey(name)) return true;
-    }
-    return false;
+    return vars.containsKey(name) || (parent?.has(name) ?? false);
   }
 
   /// `@let`: a new variable in this scope

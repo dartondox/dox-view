@@ -1,9 +1,12 @@
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'expression.dart';
 import 'safe_string.dart';
 import 'scope.dart';
+import 'utf8_sink.dart';
 import 'view_engine.dart';
 import 'view_exception.dart';
 
@@ -80,6 +83,20 @@ class RenderContext {
   String escape(Object? value) =>
       value is SafeString ? value.value : escapeHtml(text(value));
 
+  /// writes [value] to [out] like [escape], with no new string for it
+  void writeEscaped(StringSink out, Object? value) {
+    if (value is SafeString) {
+      out.write(value.value);
+    } else if (out is Utf8Sink) {
+      out.writeEscaped(text(value));
+    } else {
+      writeEscapedHtml(out, text(value));
+    }
+  }
+
+  /// true when the output has a `@stack` mark that [finish] fills
+  bool get hasStacks => _stackNames.isNotEmpty;
+
   /// the text of [value] for the output, not escaped. With
   /// `bladeOutput`, `true` is `1`, `false` is empty and `10.0` is `10`.
   String text(Object? value) {
@@ -109,7 +126,7 @@ class RenderContext {
     }
   }
 
-  void renderTemplate(String name, Scope scope, StringBuffer out, int line) {
+  void renderTemplate(String name, Scope scope, StringSink out, int line) {
     // a template that includes itself would never end
     if (_depth >= 100) {
       throw ViewException(
@@ -159,7 +176,7 @@ class RenderContext {
     }
   }
 
-  void renderNodes(List<Node> nodes, Scope scope, StringBuffer out) {
+  void renderNodes(List<Node> nodes, Scope scope, StringSink out) {
     for (Node node in nodes) {
       node.render(this, scope, out);
     }
@@ -171,17 +188,35 @@ abstract class Node {
 
   final int line;
 
-  void render(RenderContext ctx, Scope scope, StringBuffer out);
+  void render(RenderContext ctx, Scope scope, StringSink out);
 }
 
 class TextNode extends Node {
-  const TextNode(this.text, super.line);
+  TextNode(this.text, super.line);
 
   final String text;
 
+  /// [text] as UTF-8, made the first time a page renders to bytes. Null
+  /// when the text starts or ends with half of a surrogate pair: the
+  /// text next to it can hold the other half.
+  late final Uint8List? bytes = _edgeSurrogate(text) ? null : utf8.encode(text);
+
+  static bool _edgeSurrogate(String text) {
+    if (text.isEmpty) return false;
+    int first = text.codeUnitAt(0);
+    int last = text.codeUnitAt(text.length - 1);
+    return (first >= 0xDC00 && first <= 0xDFFF) ||
+        (last >= 0xD800 && last <= 0xDBFF);
+  }
+
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
-    out.write(text);
+  void render(RenderContext ctx, Scope scope, StringSink out) {
+    Uint8List? bytes;
+    if (out is Utf8Sink && (bytes = this.bytes) != null) {
+      out.addBytes(bytes!);
+    } else {
+      out.write(text);
+    }
   }
 }
 
@@ -193,9 +228,13 @@ class OutputNode extends Node {
   final bool raw;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     Object? value = ctx.eval(expr, scope, line);
-    out.write(raw ? ctx.text(value) : ctx.escape(value));
+    if (raw) {
+      out.write(ctx.text(value));
+    } else {
+      ctx.writeEscaped(out, value);
+    }
   }
 }
 
@@ -207,7 +246,7 @@ class IfNode extends Node {
   final List<Node> otherwise;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     for ((Expr, List<Node>) branch in branches) {
       if (truthy(ctx.eval(branch.$1, scope, line), scope.stringZeroIsFalse)) {
         ctx.renderNodes(branch.$2, scope, out);
@@ -238,38 +277,119 @@ class EachNode extends Node {
   final List<Node> otherwise;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     Object? value = ctx.eval(iterable, scope, line);
-    List<(Object?, Object?)> entries = switch (value) {
-      null => <(Object?, Object?)>[],
-      Map<Object?, Object?> map => <(Object?, Object?)>[
-        for (MapEntry<Object?, Object?> entry in map.entries)
-          (entry.value, entry.key),
-      ],
-      Iterable<Object?> list => <(Object?, Object?)>[
-        for (Object? item in list) (item, null),
-      ],
-      _ => throw ViewException(
+    if (value is Map<Object?, Object?>) {
+      _renderMap(ctx, scope, out, value);
+      return;
+    }
+    if (value != null && value is! Iterable<Object?>) {
+      throw ViewException(
         '@each needs a list or a map, not ${value.runtimeType}',
         template: ctx.template,
         line: line,
-      ),
-    };
+      );
+    }
+    // a copy, so a change to the list while the loop runs does not show
+    List<Object?> items = value == null
+        ? const <Object?>[]
+        : List<Object?>.of(value as Iterable<Object?>, growable: false);
+    if (items.isEmpty) {
+      ctx.renderNodes(otherwise, scope, out);
+      return;
+    }
+    Object? outer = scope.lookup(r'$loop');
+    Loop? parent = outer is Loop ? outer : null;
+    int count = items.length;
+    for (int i = 0; i < count; i++) {
+      ctx.renderNodes(
+        body,
+        RoundScope(item, items[i], key, i, Loop(i, count, parent), scope),
+        out,
+      );
+    }
+  }
+
+  void _renderMap(
+    RenderContext ctx,
+    Scope scope,
+    StringSink out,
+    Map<Object?, Object?> map,
+  ) {
+    List<MapEntry<Object?, Object?>> entries = map.entries.toList(
+      growable: false,
+    );
     if (entries.isEmpty) {
       ctx.renderNodes(otherwise, scope, out);
       return;
     }
     Object? outer = scope.lookup(r'$loop');
     Loop? parent = outer is Loop ? outer : null;
-    for (int i = 0; i < entries.length; i++) {
-      (Object?, Object?) entry = entries[i];
-      Scope inner = Scope(<String, Object?>{
-        item: entry.$1,
-        ?key: entry.$2 ?? i,
-        r'$loop': Loop(i, entries.length, parent),
-      }, scope);
-      ctx.renderNodes(body, inner, out);
+    int count = entries.length;
+    for (int i = 0; i < count; i++) {
+      MapEntry<Object?, Object?> entry = entries[i];
+      ctx.renderNodes(
+        body,
+        RoundScope(
+          item,
+          entry.value,
+          key,
+          entry.key ?? i,
+          Loop(i, count, parent),
+          scope,
+        ),
+        out,
+      );
     }
+  }
+}
+
+/// The scope of one round of `@each`. It holds the item, the key and
+/// `$loop` with no map. The map is made only when it is read, eg. by
+/// `@let` or by a directive that reads `scope.vars`.
+class RoundScope extends Scope {
+  RoundScope(
+    this.itemName,
+    this.item,
+    this.keyName,
+    this.key,
+    this.loop,
+    Scope parent,
+  ) : super(const <String, Object?>{}, parent);
+
+  final String itemName;
+  final Object? item;
+  final String? keyName;
+  final Object? key;
+  final Loop loop;
+
+  Map<String, Object?>? _vars;
+
+  // the same map, in the same order, as the old map literal: a later
+  // name wins when two are the same
+  @override
+  Map<String, Object?> get vars => _vars ??= <String, Object?>{
+    itemName: item,
+    ?keyName: key,
+    r'$loop': loop,
+  };
+
+  @override
+  Object? lookup(String name) {
+    if (_vars != null) return super.lookup(name);
+    if (name == r'$loop') return loop;
+    if (name == keyName) return key;
+    if (name == itemName) return item;
+    return parent?.lookup(name);
+  }
+
+  @override
+  bool has(String name) {
+    if (_vars != null) return super.has(name);
+    return name == r'$loop' ||
+        name == keyName ||
+        name == itemName ||
+        (parent?.has(name) ?? false);
   }
 }
 
@@ -337,7 +457,7 @@ class IncludeNode extends Node {
   final Expr? data;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     Expr? condition = this.condition;
     if (condition != null &&
         !truthy(ctx.eval(condition, scope, line), scope.stringZeroIsFalse)) {
@@ -378,7 +498,7 @@ class JsonNode extends Node {
   final Expr expr;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     Object? value = ctx.eval(expr, scope, line);
     try {
       out.write(SafeString.json(value).value);
@@ -402,7 +522,7 @@ class ErrorNode extends Node {
   final List<Node> otherwise;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     String name = stringify(ctx.eval(field, scope, line));
     String? message = _message(_find(scope.lookup('errors'), name));
     if (message == null) {
@@ -447,7 +567,7 @@ class ComponentNode extends Node {
   final Map<String, List<Node>> slots;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     Object? template = ctx.eval(name, scope, line);
     if (template is! String) {
       throw ViewException(
@@ -507,7 +627,7 @@ class SlotNode extends Node {
   final List<Node> body;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     throw ViewException(
       '@slot must be directly inside a component',
       template: ctx.template,
@@ -525,7 +645,7 @@ class LetNode extends Node {
   final bool assign;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     Object? result = ctx.eval(value, scope, line);
     if (!assign) {
       scope.define(name, result);
@@ -547,7 +667,7 @@ class ClassNode extends Node {
   final Expr expr;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     List<String> names = <String>[];
     _add(names, ctx.eval(expr, scope, line), scope.stringZeroIsFalse);
     out.write('class="${escapeHtml(names.join(' '))}"');
@@ -579,7 +699,7 @@ class AttributeNode extends Node {
   final Expr expr;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     if (truthy(ctx.eval(expr, scope, line), scope.stringZeroIsFalse)) {
       out.write(name);
     }
@@ -596,7 +716,7 @@ class OnceNode extends Node {
   final List<Node> body;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     if (ctx.once.add(key)) ctx.renderNodes(body, scope, out);
   }
 }
@@ -609,7 +729,7 @@ class ExtendsNode extends Node {
   final Expr name;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {}
+  void render(RenderContext ctx, Scope scope, StringSink out) {}
 }
 
 /// `@section('name') ... @end`, or `@section('name', value)`: content
@@ -625,7 +745,7 @@ class SectionNode extends Node {
   final Expr? value;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     if (ctx.sections.containsKey(name)) return;
     Expr? value = this.value;
     ctx.sections[name] = value == null
@@ -644,13 +764,13 @@ class YieldNode extends Node {
   final Expr? fallback;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     String? content = ctx.sections[name];
     Expr? fallback = this.fallback;
     if (content != null) {
       out.write(content);
     } else if (fallback != null) {
-      out.write(ctx.escape(ctx.eval(fallback, scope, line)));
+      ctx.writeEscaped(out, ctx.eval(fallback, scope, line));
     }
   }
 }
@@ -662,7 +782,7 @@ class StackNode extends Node {
   final String name;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     out.write(ctx.stackMark(name));
   }
 }
@@ -677,7 +797,7 @@ class PushNode extends Node {
   final bool prepend;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     String content = ctx.capture(body, Scope(<String, Object?>{}, scope));
     List<String> stack = ctx.stacks[name] ??= <String>[];
     stack.insert(prepend ? 0 : stack.length, content);
@@ -690,7 +810,7 @@ class CsrfNode extends Node {
   const CsrfNode(super.line);
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     // the shared data, so the view data can not change the token
     Object? token = ctx.shared.lookup('csrfToken');
     if (token is Function) {
@@ -724,7 +844,7 @@ class MethodNode extends Node {
   final Expr method;
 
   @override
-  void render(RenderContext ctx, Scope scope, StringBuffer out) {
+  void render(RenderContext ctx, Scope scope, StringSink out) {
     String value = escapeHtml(ctx.text(ctx.eval(method, scope, line)));
     out.write('<input type="hidden" name="_method" value="$value">');
   }

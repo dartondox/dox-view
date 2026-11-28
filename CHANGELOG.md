@@ -1,3 +1,9 @@
+## Unreleased
+
+- Faster: `view()` renders the page directly to UTF-8 bytes. It escapes and encodes the text in one pass. On the HttpArena fortunes page (201 rows, 25 kB), the render and the encode go from 199 µs to 67 µs. The fortunes test does 35% more requests a second on 4 server cores. The bytes of the page do not change. `getContent()` of the response still gives the text, so a middleware that reads the page works the same. This needs `DoxResponse.contentBytes()`, which comes in the next dox_core release.
+- New: `ViewEngine.renderBytes()` and `View.renderBytes()` give the page as UTF-8 bytes. The bytes are the same as `utf8.encode` of `render()`.
+- Faster: `{{ }}` writes the escaped text into the page, with no new string for each value. A round of `@each` makes no `Map`, unless a `@let` or a directive reads `scope.vars`. On the fortunes page, `render()` goes from 149 µs to 101 µs. The output does not change.
+
 ## 3.2.0
 
 - Fix: `dox add view` now makes `resources/views/emails/` when the app has dox_mailer. Before, with `dox add mailer` run first, the folder was never made, because the mailer only makes it when dox_view is there.
